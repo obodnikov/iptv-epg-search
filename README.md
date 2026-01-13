@@ -202,6 +202,60 @@ All code follows the guidelines specified in:
 
 This is a personal project. Modify and use as needed.
 
+## Deployment to Vercel
+
+You can deploy this application to Vercel for free hosting.
+
+### Prerequisites
+
+1. Install Vercel CLI:
+```bash
+npm install -g vercel
+```
+
+2. Log in to Vercel:
+```bash
+vercel login
+```
+
+### Deploy Without GitHub
+
+From your project directory, run:
+
+```bash
+vercel
+```
+
+Follow the prompts:
+- **Set up and deploy**: Yes
+- **Which scope**: Choose your account
+- **Link to existing project**: No
+- **Project name**: iptv-epg-search (or your preferred name)
+- **Directory**: `.` (current directory)
+- **Override settings**: No
+
+For production deployment:
+```bash
+vercel --prod
+```
+
+### After Deployment
+
+1. Vercel will provide you with a URL (e.g., `https://iptv-epg-search.vercel.app`)
+2. Open the URL in your browser
+3. Configure your EPG URL in settings
+4. Start searching!
+
+**Note:** The application automatically uses a serverless proxy function when deployed to Vercel to bypass CORS restrictions. When running locally, it fetches directly from the EPG URL.
+
+### Custom Domain (Optional)
+
+To add a custom domain:
+1. Go to your project in Vercel dashboard
+2. Navigate to Settings → Domains
+3. Add your custom domain
+4. Follow DNS configuration instructions
+
 ## Support
 
 For issues or questions, check:

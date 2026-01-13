@@ -10,8 +10,16 @@
  */
 export async function fetchEpgData(url) {
   try {
+    // Check if we're running on Vercel (production) or localhost (development)
+    const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+
+    // Use proxy on production to avoid CORS issues
+    const fetchUrl = isProduction
+      ? `/api/proxy?url=${encodeURIComponent(url)}`
+      : url;
+
     // Fetch the gzipped file
-    const response = await fetch(url);
+    const response = await fetch(fetchUrl);
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -35,15 +43,17 @@ export async function fetchEpgData(url) {
     console.error('Error fetching EPG data:', error);
 
     // Provide user-friendly error messages
-    if (error.message.includes('Failed to fetch')) {
+    const errorMessage = error?.message || String(error);
+
+    if (errorMessage.includes('Failed to fetch')) {
       throw new Error('Failed to fetch EPG data. This might be a CORS issue. The EPG server may not allow cross-origin requests.');
-    } else if (error.message.includes('HTTP error')) {
-      throw new Error(`Failed to download EPG file: ${error.message}`);
-    } else if (error.message.includes('Pako')) {
-      throw new Error('Failed to decompress EPG data. Make sure the file is gzipped.');
+    } else if (errorMessage.includes('HTTP error')) {
+      throw new Error(`Failed to download EPG file: ${errorMessage}`);
+    } else if (errorMessage.includes('incorrect header check') || errorMessage.includes('Pako')) {
+      throw new Error('Failed to decompress EPG data. The file might not be properly gzipped or may be corrupted.');
     }
 
-    throw error;
+    throw new Error(errorMessage);
   }
 }
 
