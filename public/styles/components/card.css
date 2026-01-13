@@ -1,0 +1,340 @@
+/* card.css - Card Component Styles */
+
+.card {
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-xl);
+  transition: all var(--transition-normal);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* ========================================
+   Card Header
+   ======================================== */
+
+.card-header {
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.card-title {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-bold);
+  color: var(--sqowe-dark-purple);
+  margin-bottom: var(--space-sm);
+}
+
+.card-subtitle {
+  font-size: var(--font-size-small);
+  color: var(--sqowe-light-grey);
+  font-weight: var(--font-regular);
+}
+
+/* ========================================
+   Card Body
+   ======================================== */
+
+.card-body {
+  margin-bottom: var(--space-lg);
+}
+
+.card-description {
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+  line-height: var(--line-height-relaxed);
+}
+
+/* ========================================
+   Card Footer
+   ======================================== */
+
+.card-footer {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ========================================
+   Card Variants
+   ======================================== */
+
+/* Dark Card */
+.card-dark {
+  background: var(--sqowe-dark-ground);
+  color: white;
+}
+
+.card-dark .card-title {
+  color: var(--sqowe-light-purple);
+}
+
+.card-dark .card-description {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.card-dark .card-header,
+.card-dark .card-footer {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Elevated Card */
+.card-elevated {
+  box-shadow: var(--shadow-lg);
+}
+
+.card-elevated:hover {
+  box-shadow: var(--shadow-xl);
+  transform: translateY(-4px);
+}
+
+/* Flat Card */
+.card-flat {
+  box-shadow: none;
+  border: 1px solid var(--color-border);
+}
+
+/* Gradient Card */
+.card-gradient {
+  background: var(--sqowe-gradient);
+  color: white;
+}
+
+.card-gradient .card-title {
+  color: white;
+}
+
+.card-gradient .card-description {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ========================================
+   Interactive Card
+   ======================================== */
+
+.card-interactive {
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.card-interactive:active {
+  transform: translateY(0);
+}
+
+/* ========================================
+   Card Sizes
+   ======================================== */
+
+.card-compact {
+  padding: var(--space-md);
+}
+
+.card-spacious {
+  padding: var(--space-2xl);
+}
+
+/* ========================================
+   Result Card (for EPG results)
+   ======================================== */
+
+.result-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.result-card-channel {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-medium);
+  color: var(--sqowe-light-purple);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.result-card-title {
+  font-size: var(--font-size-h5);
+  font-weight: var(--font-bold);
+  color: var(--sqowe-dark-purple);
+  margin-bottom: var(--space-xs);
+}
+
+.result-card-time {
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.result-card-description {
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+  line-height: var(--line-height-relaxed);
+  margin-top: var(--space-sm);
+}
+
+.result-card-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-sm);
+  background-color: var(--sqowe-light-purple);
+  color: white;
+}
+
+.result-card-badge.badge-past {
+  background-color: var(--sqowe-light-grey);
+  color: var(--sqowe-dark-ground);
+}
+
+.result-card-badge.badge-current {
+  background-color: var(--color-success);
+}
+
+.result-card-badge.badge-future {
+  background-color: var(--sqowe-dark-purple);
+}
+
+/* ========================================
+   List View
+   ======================================== */
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.result-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md);
+  background: white;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  transition: all var(--transition-normal);
+  cursor: pointer;
+}
+
+.result-list-item:hover {
+  border-color: var(--sqowe-light-purple);
+  box-shadow: var(--shadow-sm);
+  transform: translateX(4px);
+}
+
+.result-list-channel {
+  min-width: 120px;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-medium);
+  color: var(--sqowe-light-purple);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.result-list-time {
+  min-width: 180px;
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.result-list-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-list-title {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-medium);
+  color: var(--sqowe-dark-purple);
+  margin-bottom: var(--space-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-list-description {
+  font-size: var(--font-size-small);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-list-badge {
+  min-width: 70px;
+  text-align: center;
+}
+
+/* Clickable cards */
+.result-card.clickable,
+.result-list-item.clickable {
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.result-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.result-card.clickable:active,
+.result-list-item.clickable:active {
+  transform: scale(0.98);
+}
+
+/* ========================================
+   Responsive
+   ======================================== */
+
+@media (max-width: 768px) {
+  .card {
+    padding: var(--space-lg);
+  }
+
+  .card-compact {
+    padding: var(--space-sm);
+  }
+
+  .result-card-title {
+    font-size: var(--font-size-h6);
+  }
+
+  /* List view responsive */
+  .result-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .result-list-channel,
+  .result-list-time {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .result-list-title,
+  .result-list-description {
+    white-space: normal;
+  }
+
+  .result-list-badge {
+    align-self: flex-start;
+  }
+}
