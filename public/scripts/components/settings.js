@@ -48,8 +48,8 @@ function loadSavedUrl() {
   if (savedUrl && epgUrlInput) {
     epgUrlInput.value = savedUrl;
   } else if (epgUrlInput && !epgUrlInput.value) {
-    // Set default URL if none exists
-    epgUrlInput.value = 'http://s03.wsbof.com:8080/xml/4a27b28d.gz';
+    // Clear the input if no saved URL exists
+    epgUrlInput.value = '';
   }
 }
 

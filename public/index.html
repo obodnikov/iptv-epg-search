@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="styles/components/button.css">
   <link rel="stylesheet" href="styles/components/card.css">
   <link rel="stylesheet" href="styles/components/form.css">
+  <link rel="stylesheet" href="styles/components/modal.css">
 </head>
 <body>
 
@@ -168,7 +169,25 @@
       <section id="resultsSection" style="display: none;">
         <div class="flex-between mb-lg">
           <h2 class="h3">Search Results</h2>
-          <p id="resultsCount" class="text-small text-light"></p>
+          <div class="flex gap-md" style="align-items: center;">
+            <div class="view-toggle">
+              <button type="button" class="btn btn-small" id="gridViewBtn" data-active="true" aria-label="Grid view">
+                Grid
+              </button>
+              <button type="button" class="btn btn-small btn-secondary" id="listViewBtn" aria-label="List view">
+                List
+              </button>
+            </div>
+            <div style="min-width: 180px;">
+              <select id="sortSelect" class="form-select" style="padding: 0.5rem 2.5rem 0.5rem 0.75rem; font-size: 0.875rem;">
+                <option value="time-asc">Time (Earliest First)</option>
+                <option value="time-desc">Time (Latest First)</option>
+                <option value="channel-asc">Channel (A-Z)</option>
+                <option value="title-asc">Title (A-Z)</option>
+              </select>
+            </div>
+            <p id="resultsCount" class="text-small text-light"></p>
+          </div>
         </div>
 
         <div id="resultsContainer" class="grid grid-auto">
@@ -186,6 +205,20 @@
 
     </div>
   </main>
+
+  <!-- Program Details Modal -->
+  <div id="programModal" class="modal" style="display: none;">
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle"></h2>
+        <button type="button" class="modal-close" id="modalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Dynamic content will be inserted here -->
+      </div>
+    </div>
+  </div>
 
   <!-- Pako library for gzip decompression -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>

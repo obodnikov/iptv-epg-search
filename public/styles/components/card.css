@@ -209,6 +209,97 @@
 }
 
 /* ========================================
+   List View
+   ======================================== */
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.result-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md);
+  background: white;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  transition: all var(--transition-normal);
+  cursor: pointer;
+}
+
+.result-list-item:hover {
+  border-color: var(--sqowe-light-purple);
+  box-shadow: var(--shadow-sm);
+  transform: translateX(4px);
+}
+
+.result-list-channel {
+  min-width: 120px;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-medium);
+  color: var(--sqowe-light-purple);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.result-list-time {
+  min-width: 180px;
+  font-size: var(--font-size-small);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.result-list-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-list-title {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-medium);
+  color: var(--sqowe-dark-purple);
+  margin-bottom: var(--space-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-list-description {
+  font-size: var(--font-size-small);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-list-badge {
+  min-width: 70px;
+  text-align: center;
+}
+
+/* Clickable cards */
+.result-card.clickable,
+.result-list-item.clickable {
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.result-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.result-card.clickable:active,
+.result-list-item.clickable:active {
+  transform: scale(0.98);
+}
+
+/* ========================================
    Responsive
    ======================================== */
 
@@ -223,5 +314,27 @@
 
   .result-card-title {
     font-size: var(--font-size-h6);
+  }
+
+  /* List view responsive */
+  .result-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .result-list-channel,
+  .result-list-time {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .result-list-title,
+  .result-list-description {
+    white-space: normal;
+  }
+
+  .result-list-badge {
+    align-self: flex-start;
   }
 }

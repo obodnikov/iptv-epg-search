@@ -83,17 +83,35 @@ export function applyFilters(programs, options = {}) {
 }
 
 /**
- * Sort programs by start time
+ * Sort programs by various criteria
  * @param {Array} programs - Array of program objects
- * @param {string} order - Sort order: 'asc' or 'desc'
+ * @param {string} sortBy - Sort criteria: 'time-asc', 'time-desc', 'channel-asc', 'title-asc'
  * @returns {Array} - Sorted programs
  */
-export function sortPrograms(programs, order = 'asc') {
+export function sortPrograms(programs, sortBy = 'time-asc') {
   return [...programs].sort((a, b) => {
-    const timeA = a.start.getTime();
-    const timeB = b.start.getTime();
+    switch (sortBy) {
+      case 'time-asc':
+        return a.start.getTime() - b.start.getTime();
 
-    return order === 'asc' ? timeA - timeB : timeB - timeA;
+      case 'time-desc':
+        return b.start.getTime() - a.start.getTime();
+
+      case 'channel-asc':
+        // Sort by channel first, then by time
+        const channelCompare = a.channelName.localeCompare(b.channelName);
+        if (channelCompare !== 0) return channelCompare;
+        return a.start.getTime() - b.start.getTime();
+
+      case 'title-asc':
+        // Sort by title first, then by time
+        const titleCompare = a.title.localeCompare(b.title);
+        if (titleCompare !== 0) return titleCompare;
+        return a.start.getTime() - b.start.getTime();
+
+      default:
+        return a.start.getTime() - b.start.getTime();
+    }
   });
 }
 

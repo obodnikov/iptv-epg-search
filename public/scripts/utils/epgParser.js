@@ -213,3 +213,150 @@ export function getProgramStatus(start, stop) {
     return 'future';
   }
 }
+
+/**
+ * Analyze EPG XML to discover available fields and their usage
+ * @param {string} xmlString - XML string to analyze
+ * @returns {Object} - Analysis results with field statistics
+ */
+export function analyzeEpgXml(xmlString) {
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
+
+    // Check for parsing errors
+    const parserError = xmlDoc.querySelector('parsererror');
+    if (parserError) {
+      throw new Error('XML parsing error: ' + parserError.textContent);
+    }
+
+    const analysis = {
+      totalPrograms: 0,
+      totalChannels: 0,
+      programFields: {},
+      channelFields: {},
+      programAttributes: {},
+      samplePrograms: []
+    };
+
+    // Analyze channels
+    const channelElements = xmlDoc.querySelectorAll('channel');
+    analysis.totalChannels = channelElements.length;
+
+    // Sample first 10 channels
+    channelElements.forEach((channel, idx) => {
+      if (idx < 10) {
+        // Count channel attributes
+        for (let attr of channel.attributes) {
+          if (!analysis.channelFields[attr.name]) {
+            analysis.channelFields[attr.name] = {
+              count: 0,
+              type: 'attribute',
+              examples: []
+            };
+          }
+          analysis.channelFields[attr.name].count++;
+          if (analysis.channelFields[attr.name].examples.length < 3) {
+            analysis.channelFields[attr.name].examples.push(attr.value);
+          }
+        }
+
+        // Count channel child elements
+        for (let child of channel.children) {
+          const tagName = child.tagName;
+          if (!analysis.channelFields[tagName]) {
+            analysis.channelFields[tagName] = {
+              count: 0,
+              type: 'element',
+              examples: []
+            };
+          }
+          analysis.channelFields[tagName].count++;
+          if (analysis.channelFields[tagName].examples.length < 3) {
+            analysis.channelFields[tagName].examples.push(child.textContent.trim());
+          }
+        }
+      }
+    });
+
+    // Analyze programs
+    const programElements = xmlDoc.querySelectorAll('programme');
+    analysis.totalPrograms = programElements.length;
+
+    // Sample first 100 programs for field analysis
+    const sampleSize = Math.min(100, programElements.length);
+    for (let i = 0; i < sampleSize; i++) {
+      const program = programElements[i];
+
+      // Count program attributes
+      for (let attr of program.attributes) {
+        if (!analysis.programAttributes[attr.name]) {
+          analysis.programAttributes[attr.name] = {
+            count: 0,
+            examples: []
+          };
+        }
+        analysis.programAttributes[attr.name].count++;
+        if (analysis.programAttributes[attr.name].examples.length < 3) {
+          analysis.programAttributes[attr.name].examples.push(attr.value);
+        }
+      }
+
+      // Count program child elements
+      for (let child of program.children) {
+        const tagName = child.tagName;
+        if (!analysis.programFields[tagName]) {
+          analysis.programFields[tagName] = {
+            count: 0,
+            examples: []
+          };
+        }
+        analysis.programFields[tagName].count++;
+        if (analysis.programFields[tagName].examples.length < 3) {
+          const text = child.textContent.trim();
+          // Also capture attributes of child elements
+          const attrs = {};
+          for (let attr of child.attributes) {
+            attrs[attr.name] = attr.value;
+          }
+          analysis.programFields[tagName].examples.push({
+            text: text.substring(0, 100), // Limit text length
+            attributes: Object.keys(attrs).length > 0 ? attrs : undefined
+          });
+        }
+      }
+
+      // Store first 5 programs as samples
+      if (i < 5) {
+        const sample = {
+          channel: program.getAttribute('channel'),
+          start: program.getAttribute('start'),
+          stop: program.getAttribute('stop')
+        };
+
+        // Add all child element values
+        for (let child of program.children) {
+          const tagName = child.tagName;
+          const text = child.textContent.trim();
+          const attrs = {};
+          for (let attr of child.attributes) {
+            attrs[attr.name] = attr.value;
+          }
+
+          if (Object.keys(attrs).length > 0) {
+            sample[tagName] = { text, attributes: attrs };
+          } else {
+            sample[tagName] = text;
+          }
+        }
+
+        analysis.samplePrograms.push(sample);
+      }
+    }
+
+    return analysis;
+  } catch (error) {
+    console.error('Error analyzing EPG XML:', error);
+    throw new Error('Failed to analyze EPG XML: ' + error.message);
+  }
+}

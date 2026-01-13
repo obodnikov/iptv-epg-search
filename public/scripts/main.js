@@ -12,20 +12,26 @@ import {
   hideError,
   showNoData,
   hideNoData,
-  hideResults
+  hideResults,
+  initViewToggle,
+  initModal
 } from './components/results.js';
-import { fetchEpgData, parseEpgXml } from './utils/epgParser.js';
+import { fetchEpgData, parseEpgXml, analyzeEpgXml } from './utils/epgParser.js';
 import { getEpgUrl, saveLastUpdated } from './utils/storage.js';
 import { applyFilters, sortPrograms } from './utils/search.js';
 
-// Application state
-const appState = {
+// Application state (expose globally for view toggle)
+window.appState = {
   epgData: null,
   currentResults: [],
   searchQuery: '',
   searchScope: 'both',
-  timeFilter: 'all'
+  timeFilter: 'all',
+  sortBy: 'time-asc',
+  maxResults: 100 // Limit results to prevent browser freeze
 };
+
+const appState = window.appState;
 
 /**
  * Initialize the application
@@ -40,6 +46,12 @@ function init() {
 
   // Initialize search and filter controls
   initControls();
+
+  // Initialize view toggle
+  initViewToggle();
+
+  // Initialize modal
+  initModal();
 
   // Check if EPG URL is configured
   if (!hasConfiguredUrl()) {
@@ -61,6 +73,7 @@ function initControls() {
   const loadEpgButton = document.getElementById('loadEpgButton');
   const searchScopeRadios = document.querySelectorAll('input[name="searchScope"]');
   const timeFilterRadios = document.querySelectorAll('input[name="timeFilter"]');
+  const sortSelect = document.getElementById('sortSelect');
 
   // Search input
   searchInput?.addEventListener('input', (e) => {
@@ -102,6 +115,12 @@ function initControls() {
     });
   });
 
+  // Sort select
+  sortSelect?.addEventListener('change', (e) => {
+    appState.sortBy = e.target.value;
+    performSearch();
+  });
+
   // Load EPG button
   loadEpgButton?.addEventListener('click', loadEpgData);
 }
@@ -124,6 +143,48 @@ function handleSettingsSaved() {
   console.log('Settings saved, EPG URL updated');
   // Optionally auto-load after saving settings
   // loadEpgData();
+}
+
+/**
+ * Show data loaded message
+ * @param {number} totalPrograms - Total programs loaded
+ * @param {number} totalChannels - Total channels loaded
+ */
+function showDataLoadedMessage(totalPrograms, totalChannels) {
+  const noDataState = document.getElementById('noDataState');
+  const resultsSection = document.getElementById('resultsSection');
+  const errorState = document.getElementById('errorState');
+  const loadingState = document.getElementById('loadingState');
+
+  // Hide all states
+  noDataState.style.display = 'none';
+  resultsSection.style.display = 'none';
+  errorState.style.display = 'none';
+  loadingState.style.display = 'none';
+
+  // Create or update info card
+  let infoCard = document.getElementById('dataLoadedInfo');
+  if (!infoCard) {
+    infoCard = document.createElement('div');
+    infoCard.id = 'dataLoadedInfo';
+    infoCard.className = 'card';
+    const container = document.querySelector('.container');
+    const filterControls = document.querySelector('.filter-controls');
+    filterControls.insertAdjacentElement('afterend', infoCard);
+  }
+
+  infoCard.innerHTML = `
+    <div class="card-body" style="text-align: left;">
+      <h3 class="card-title">EPG Data Loaded Successfully</h3>
+      <p class="card-description mb-lg">
+        Loaded <strong>${totalPrograms.toLocaleString()}</strong> programs from <strong>${totalChannels}</strong> channels.
+      </p>
+      <p class="card-description">
+        Use the search box and filters above to find programs. Enter at least 2 characters or select a time filter.
+      </p>
+    </div>
+  `;
+  infoCard.style.display = 'block';
 }
 
 /**
@@ -157,6 +218,23 @@ async function loadEpgData() {
       programs: epgData.totalPrograms
     });
 
+    // Analyze EPG structure
+    console.log('Analyzing EPG XML structure...');
+    const analysis = analyzeEpgXml(xmlString);
+    console.log('EPG Analysis Results:', analysis);
+    console.log('\n=== Available Program Fields ===');
+    Object.entries(analysis.programFields).forEach(([field, info]) => {
+      console.log(`${field}: ${info.count} occurrences`);
+      console.log('  Examples:', info.examples);
+    });
+    console.log('\n=== Program Attributes ===');
+    Object.entries(analysis.programAttributes).forEach(([attr, info]) => {
+      console.log(`${attr}: ${info.count} occurrences`);
+      console.log('  Examples:', info.examples);
+    });
+    console.log('\n=== Sample Programs ===');
+    console.log(analysis.samplePrograms);
+
     // Store in app state
     appState.epgData = epgData;
 
@@ -166,8 +244,8 @@ async function loadEpgData() {
     // Hide loading and show success
     hideLoading();
 
-    // Show initial results (all programs)
-    performSearch();
+    // Show info message instead of all results
+    showDataLoadedMessage(epgData.totalPrograms, epgData.totalChannels);
 
     console.log('EPG data loaded successfully');
   } catch (error) {
@@ -187,10 +265,26 @@ function performSearch() {
     return;
   }
 
+  // Validate search query
+  const query = appState.searchQuery.trim();
+
+  // Require minimum 2 characters for text search
+  if (query.length > 0 && query.length < 2) {
+    showError('Please enter at least 2 characters to search');
+    return;
+  }
+
+  // If no search query and time filter is 'all', show message
+  if (query.length === 0 && appState.timeFilter === 'all') {
+    showError('Please enter a search term or select a time filter to narrow down results');
+    return;
+  }
+
   console.log('Performing search with:', {
     query: appState.searchQuery,
     scope: appState.searchScope,
-    timeFilter: appState.timeFilter
+    timeFilter: appState.timeFilter,
+    sortBy: appState.sortBy
   });
 
   hideError();
@@ -203,16 +297,20 @@ function performSearch() {
     timeFilter: appState.timeFilter
   });
 
-  // Sort by start time (ascending)
-  const sorted = sortPrograms(filtered, 'asc');
+  // Sort by selected criteria
+  const sorted = sortPrograms(filtered, appState.sortBy);
+
+  // Limit results to prevent browser freeze
+  const limited = sorted.slice(0, appState.maxResults);
+  const hasMore = sorted.length > appState.maxResults;
 
   // Store current results
-  appState.currentResults = sorted;
+  appState.currentResults = limited;
 
   // Display results
-  displayResults(sorted);
+  displayResults(limited, hasMore, sorted.length);
 
-  console.log(`Found ${sorted.length} results`);
+  console.log(`Found ${sorted.length} results, displaying ${limited.length}`);
 }
 
 /**
