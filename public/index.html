@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="IPTV EPG Search - Search and browse electronic program guide">
+  <title>IPTV EPG Search</title>
+
+  <!-- Google Fonts - Montserrat -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/layout.css">
+  <link rel="stylesheet" href="styles/components/button.css">
+  <link rel="stylesheet" href="styles/components/card.css">
+  <link rel="stylesheet" href="styles/components/form.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <h1 class="header-title">IPTV EPG Search</h1>
+        <button type="button" class="btn btn-text" id="settingsToggle" aria-label="Toggle settings">
+          Settings
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main">
+    <div class="container">
+
+      <!-- Settings Panel (Collapsible) -->
+      <section id="settingsPanel" class="card mb-xl" style="display: none;">
+        <div class="card-header">
+          <h2 class="card-title">Settings</h2>
+        </div>
+        <div class="card-body">
+          <form id="settingsForm">
+            <div class="form-group">
+              <label for="epgUrl" class="form-label">
+                EPG URL <span class="required">*</span>
+              </label>
+              <input
+                type="url"
+                id="epgUrl"
+                name="epgUrl"
+                class="form-input"
+                placeholder="http://example.com/epg.xml.gz"
+                required
+              >
+              <p class="form-help">Enter the URL to your gzipped EPG XML file. The URL will be stored in your browser.</p>
+            </div>
+            <div class="btn-group">
+              <button type="submit" class="btn btn-primary">Save Settings</button>
+              <button type="button" class="btn btn-secondary" id="cancelSettings">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Search and Filter Section -->
+      <section class="filter-controls mb-xl">
+        <div class="form-group">
+          <label for="searchInput" class="form-label">Search Programs</label>
+          <div class="search-input-wrapper">
+            <span class="search-input-icon" aria-hidden="true">🔍</span>
+            <input
+              type="text"
+              id="searchInput"
+              class="form-input search-input"
+              placeholder="Search by program title or description..."
+            >
+            <button type="button" class="search-input-clear" id="clearSearch" style="display: none;" aria-label="Clear search">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Search In</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="searchScope" value="both" class="radio-input" checked>
+              <span>Title & Description</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="searchScope" value="title" class="radio-input">
+              <span>Title Only</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="searchScope" value="description" class="radio-input">
+              <span>Description Only</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="searchScope" value="channel" class="radio-input">
+              <span>Channel Name</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Time Filter</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="timeFilter" value="all" class="radio-input" checked>
+              <span>All Programs</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="timeFilter" value="past" class="radio-input">
+              <span>Past</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="timeFilter" value="current" class="radio-input">
+              <span>Current</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="timeFilter" value="future" class="radio-input">
+              <span>Future</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="flex-between">
+          <button type="button" class="btn btn-primary" id="searchButton">
+            Search
+          </button>
+          <button type="button" class="btn btn-outline" id="loadEpgButton">
+            Load EPG Data
+          </button>
+        </div>
+      </section>
+
+      <!-- Loading State -->
+      <div id="loadingState" class="card text-center" style="display: none;">
+        <div class="card-body">
+          <p>Loading EPG data...</p>
+          <p class="text-small text-light">This may take a moment</p>
+        </div>
+      </div>
+
+      <!-- Error State -->
+      <div id="errorState" class="card" style="display: none;">
+        <div class="card-body">
+          <h3 class="card-title">Error</h3>
+          <p id="errorMessage" class="card-description"></p>
+        </div>
+      </div>
+
+      <!-- No Data State -->
+      <div id="noDataState" class="card text-center" style="display: none;">
+        <div class="card-body">
+          <h3 class="card-title">No EPG Data Loaded</h3>
+          <p class="card-description mb-lg">Please configure your EPG URL in settings and load the data.</p>
+          <button type="button" class="btn btn-primary" id="openSettingsButton">
+            Open Settings
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <section id="resultsSection" style="display: none;">
+        <div class="flex-between mb-lg">
+          <h2 class="h3">Search Results</h2>
+          <p id="resultsCount" class="text-small text-light"></p>
+        </div>
+
+        <div id="resultsContainer" class="grid grid-auto">
+          <!-- Results will be dynamically inserted here -->
+        </div>
+
+        <!-- No Results -->
+        <div id="noResultsState" class="card text-center" style="display: none;">
+          <div class="card-body">
+            <h3 class="card-title">No Results Found</h3>
+            <p class="card-description">Try adjusting your search or filter criteria.</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Pako library for gzip decompression -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+
+  <!-- Application Scripts -->
+  <script type="module" src="scripts/main.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,191 @@
+/* button.css - Button Component Styles */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 2rem;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-medium);
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ========================================
+   Button Variants
+   ======================================== */
+
+/* Primary Button */
+.btn-primary {
+  background-color: var(--sqowe-dark-purple);
+  color: white;
+  border-color: var(--sqowe-dark-purple);
+}
+
+.btn-primary:hover {
+  background-color: var(--sqowe-light-purple);
+  border-color: var(--sqowe-light-purple);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Secondary Button */
+.btn-secondary {
+  background-color: transparent;
+  color: var(--sqowe-dark-purple);
+  border-color: var(--sqowe-dark-purple);
+}
+
+.btn-secondary:hover {
+  background-color: var(--sqowe-dark-purple);
+  color: white;
+}
+
+/* Gradient Button */
+.btn-gradient {
+  background: var(--sqowe-gradient);
+  color: white;
+  border: none;
+}
+
+.btn-gradient:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(91, 83, 119, 0.3);
+}
+
+/* Outline Button */
+.btn-outline {
+  background-color: transparent;
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+
+.btn-outline:hover {
+  background-color: var(--sqowe-light-purple);
+  color: white;
+  border-color: var(--sqowe-light-purple);
+}
+
+/* Text Button */
+.btn-text {
+  background-color: transparent;
+  color: var(--sqowe-dark-purple);
+  border: none;
+  padding: 0.5rem 1rem;
+}
+
+.btn-text:hover {
+  background-color: rgba(142, 136, 163, 0.1);
+}
+
+/* ========================================
+   Button Sizes
+   ======================================== */
+
+.btn-small {
+  padding: 0.5rem 1.5rem;
+  font-size: var(--font-size-small);
+}
+
+.btn-large {
+  padding: 1rem 2.5rem;
+  font-size: 1.125rem;
+}
+
+/* ========================================
+   Button States
+   ======================================== */
+
+.btn-loading {
+  position: relative;
+  color: transparent;
+  pointer-events: none;
+}
+
+.btn-loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  color: white;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ========================================
+   Icon Buttons
+   ======================================== */
+
+.btn-icon {
+  padding: 0.75rem;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+}
+
+.btn-icon.btn-small {
+  width: 32px;
+  height: 32px;
+  padding: 0.5rem;
+}
+
+.btn-icon.btn-large {
+  width: 48px;
+  height: 48px;
+  padding: 1rem;
+}
+
+/* ========================================
+   Button Group
+   ======================================== */
+
+.btn-group {
+  display: inline-flex;
+  gap: var(--space-sm);
+}
+
+.btn-group .btn {
+  margin: 0;
+}
+
+/* ========================================
+   Responsive
+   ======================================== */
+
+@media (max-width: 768px) {
+  .btn {
+    padding: 0.625rem 1.5rem;
+  }
+
+  .btn-large {
+    padding: 0.875rem 2rem;
+  }
+}
