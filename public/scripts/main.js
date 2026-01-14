@@ -18,17 +18,27 @@ import {
 } from './components/results.js';
 import { fetchEpgData, parseEpgXml, analyzeEpgXml } from './utils/epgParser.js';
 import { getEpgUrl, saveLastUpdated } from './utils/storage.js';
-import { applyFilters, sortPrograms } from './utils/search.js';
+import { applyFilters, sortPrograms, applyRatingBoost } from './utils/search.js';
+import { 
+  initSearchIndex, 
+  fuzzySearch, 
+  isFuzzySearchAvailable,
+  getFuzzySearchStatus 
+} from './utils/fuzzySearch.js';
 
 // Application state (expose globally for view toggle)
 window.appState = {
   epgData: null,
+  fuseIndex: null, // Fuzzy search index
   currentResults: [],
   searchQuery: '',
   searchScope: 'both',
   timeFilter: 'all',
   sortBy: 'time-asc',
-  maxResults: 100 // Limit results to prevent browser freeze
+  maxResults: 100, // Limit results to prevent browser freeze
+  useFuzzySearch: true, // Toggle for fuzzy vs exact search
+  fuzzyThreshold: 0.4, // Fuzzy matching sensitivity (0 = exact, 1 = match anything)
+  searchDebounceMs: 300 // Debounce delay for search input (configurable)
 };
 
 const appState = window.appState;
@@ -74,11 +84,22 @@ function initControls() {
   const searchScopeRadios = document.querySelectorAll('input[name="searchScope"]');
   const timeFilterRadios = document.querySelectorAll('input[name="timeFilter"]');
   const sortSelect = document.getElementById('sortSelect');
+  const fuzzyToggle = document.getElementById('fuzzySearchToggle');
+  const fuzzyThresholdSlider = document.getElementById('fuzzyThreshold');
 
-  // Search input
+  // Search input with debouncing
+  let searchTimeout;
   searchInput?.addEventListener('input', (e) => {
     appState.searchQuery = e.target.value;
     toggleClearButton(e.target.value);
+    
+    // Debounce search (configurable delay after user stops typing)
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      if (appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+        performSearch();
+      }
+    }, appState.searchDebounceMs);
   });
 
   // Clear search button
@@ -95,6 +116,7 @@ function initControls() {
   // Enter key on search input
   searchInput?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
+      clearTimeout(searchTimeout);
       performSearch();
     }
   });
@@ -121,8 +143,28 @@ function initControls() {
     performSearch();
   });
 
+  // Fuzzy search toggle
+  fuzzyToggle?.addEventListener('change', (e) => {
+    appState.useFuzzySearch = e.target.checked;
+    updateFuzzySearchUI();
+    performSearch();
+  });
+
+  // Fuzzy threshold slider
+  fuzzyThresholdSlider?.addEventListener('input', (e) => {
+    appState.fuzzyThreshold = parseFloat(e.target.value);
+    updateThresholdDisplay();
+  });
+
+  fuzzyThresholdSlider?.addEventListener('change', () => {
+    performSearch();
+  });
+
   // Load EPG button
   loadEpgButton?.addEventListener('click', loadEpgData);
+  
+  // Initialize fuzzy search UI
+  updateFuzzySearchUI();
 }
 
 /**
@@ -133,6 +175,55 @@ function toggleClearButton(value) {
   const clearSearchButton = document.getElementById('clearSearch');
   if (clearSearchButton) {
     clearSearchButton.style.display = value.trim().length > 0 ? 'block' : 'none';
+  }
+}
+
+/**
+ * Update fuzzy search UI elements
+ */
+function updateFuzzySearchUI() {
+  const fuzzyToggle = document.getElementById('fuzzySearchToggle');
+  const fuzzySettings = document.getElementById('fuzzySearchSettings');
+  const fuzzyStatus = document.getElementById('fuzzySearchStatus');
+  
+  // Check if fuzzy search is available
+  const isAvailable = isFuzzySearchAvailable();
+  
+  if (fuzzyToggle) {
+    fuzzyToggle.disabled = !isAvailable;
+    if (!isAvailable) {
+      fuzzyToggle.checked = false;
+      appState.useFuzzySearch = false;
+    }
+  }
+  
+  if (fuzzySettings) {
+    fuzzySettings.style.display = appState.useFuzzySearch && isAvailable ? 'block' : 'none';
+  }
+  
+  if (fuzzyStatus) {
+    fuzzyStatus.textContent = getFuzzySearchStatus();
+    fuzzyStatus.className = isAvailable ? 'text-small text-success' : 'text-small text-warning';
+  }
+  
+  updateThresholdDisplay();
+}
+
+/**
+ * Update threshold display
+ */
+function updateThresholdDisplay() {
+  const display = document.getElementById('fuzzyThresholdValue');
+  if (display) {
+    const threshold = appState.fuzzyThreshold;
+    let label = 'Medium';
+    if (threshold <= 0.2) label = 'Very Strict';
+    else if (threshold <= 0.3) label = 'Strict';
+    else if (threshold <= 0.5) label = 'Medium';
+    else if (threshold <= 0.7) label = 'Loose';
+    else label = 'Very Loose';
+    
+    display.textContent = `${label} (${threshold.toFixed(2)})`;
   }
 }
 
@@ -238,6 +329,39 @@ async function loadEpgData() {
     // Store in app state
     appState.epgData = epgData;
 
+    // Build fuzzy search index if available
+    if (isFuzzySearchAvailable()) {
+      console.log('Building fuzzy search index...');
+      
+      // Show progress message
+      const loadingState = document.getElementById('loadingState');
+      if (loadingState) {
+        loadingState.innerHTML = '<div class="card-body"><p>Building search index...</p><p class="text-small text-light">Processing programs...</p></div>';
+        loadingState.style.display = 'block';
+      }
+      
+      try {
+        appState.fuseIndex = await initSearchIndex(
+          epgData.programs, 
+          { threshold: appState.fuzzyThreshold },
+          (current, total) => {
+            // Update progress
+            const percent = Math.round((current / total) * 100);
+            if (loadingState) {
+              loadingState.innerHTML = `<div class="card-body"><p>Building search index...</p><p class="text-small text-light">${percent}% complete (${current.toLocaleString()} / ${total.toLocaleString()} programs)</p></div>`;
+            }
+          }
+        );
+        console.log('Fuzzy search index ready');
+      } catch (error) {
+        console.error('Failed to build search index:', error);
+        appState.fuseIndex = null;
+      }
+    } else {
+      console.warn('Fuzzy search not available, using exact match only');
+      appState.fuseIndex = null;
+    }
+
     // Save last updated timestamp
     saveLastUpdated(Date.now());
 
@@ -246,6 +370,9 @@ async function loadEpgData() {
 
     // Show info message instead of all results
     showDataLoadedMessage(epgData.totalPrograms, epgData.totalChannels);
+    
+    // Update fuzzy search UI
+    updateFuzzySearchUI();
 
     console.log('EPG data loaded successfully');
   } catch (error) {
@@ -284,21 +411,66 @@ function performSearch() {
     query: appState.searchQuery,
     scope: appState.searchScope,
     timeFilter: appState.timeFilter,
-    sortBy: appState.sortBy
+    sortBy: appState.sortBy,
+    useFuzzySearch: appState.useFuzzySearch,
+    fuzzyThreshold: appState.fuzzyThreshold
   });
 
   hideError();
   hideNoData();
 
-  // Apply filters
-  const filtered = applyFilters(appState.epgData.programs, {
-    searchQuery: appState.searchQuery,
-    searchScope: appState.searchScope,
-    timeFilter: appState.timeFilter
-  });
+  let filtered;
 
-  // Sort by selected criteria
-  const sorted = sortPrograms(filtered, appState.sortBy);
+  // Use fuzzy search if enabled and available
+  if (appState.useFuzzySearch && appState.fuseIndex && query.length >= 2) {
+    console.log('Using fuzzy search');
+    
+    // Check if index is ready (not null)
+    if (!appState.fuseIndex) {
+      console.warn('Fuzzy search index not ready, falling back to exact search');
+      filtered = applyFilters(appState.epgData.programs, {
+        searchQuery: appState.searchQuery,
+        searchScope: appState.searchScope,
+        timeFilter: appState.timeFilter
+      });
+    } else {
+      // Perform fuzzy search
+      const fuzzyResults = fuzzySearch(appState.fuseIndex, query, {
+        scope: appState.searchScope,
+        threshold: appState.fuzzyThreshold
+      });
+      
+      // Apply time filter to fuzzy results
+      filtered = applyFilters(fuzzyResults, {
+        searchQuery: '', // Already searched
+        searchScope: appState.searchScope,
+        timeFilter: appState.timeFilter
+      });
+      
+      console.log(`Fuzzy search found ${fuzzyResults.length} matches, ${filtered.length} after time filter`);
+    }
+  } else {
+    console.log('Using exact search');
+    
+    // Use exact match search
+    filtered = applyFilters(appState.epgData.programs, {
+      searchQuery: appState.searchQuery,
+      searchScope: appState.searchScope,
+      timeFilter: appState.timeFilter
+    });
+  }
+
+  // Apply rating boost
+  const boosted = applyRatingBoost(filtered);
+
+  // Sort by selected criteria (if not using fuzzy scores)
+  let sorted;
+  if (appState.useFuzzySearch && appState.fuseIndex && query.length >= 2) {
+    // Fuzzy results are already sorted by relevance + rating boost
+    sorted = boosted;
+  } else {
+    sorted = sortPrograms(boosted, appState.sortBy);
+  }
 
   // Limit results to prevent browser freeze
   const limited = sorted.slice(0, appState.maxResults);

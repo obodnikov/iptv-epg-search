@@ -4,12 +4,16 @@ A simple web application for searching and browsing IPTV Electronic Program Guid
 
 ## Features
 
+- **Fuzzy Search**: Morphology-aware search with Russian/English stemming (handles word variations like "Убийство" → "Убийства")
+- **Program Ratings**: Rate programs with 5-star system, ratings boost search results
 - **EPG URL Management**: Store EPG URL locally in your browser
-- **Search Programs**: Search by program title or description
+- **Search Programs**: Search by program title, description, or channel name
 - **Time Filters**: Filter programs by past, current, or future
+- **View Modes**: Switch between grid and list views
 - **Clean UI**: Material-inspired design following sqowe brand guidelines
 - **Responsive**: Works on mobile, tablet, and desktop devices
 - **Client-side**: All processing happens in your browser
+- **No Build Step**: Pure vanilla JavaScript, runs directly in browser
 
 ## Getting Started
 
@@ -65,13 +69,33 @@ The URL will be stored in your browser's localStorage.
 
 ### 4. Search and Filter
 
-- **Search**: Type in the search box to find programs by title or description
+- **Search**: Type in the search box to find programs
+  - Fuzzy search is enabled by default (handles typos and word variations)
+  - Adjust sensitivity in Settings if needed
+  - Toggle between fuzzy and exact match in Settings
+- **Search Scope**: Choose where to search:
+  - Title & Description (default)
+  - Title Only
+  - Description Only
+  - Channel Name
 - **Time Filter**: Select a filter to show:
   - All Programs
   - Past programs
   - Current programs (airing now)
   - Future programs
-- Click "Search" to see results
+- **Sort**: Sort results by time, channel, or title
+- **Rate Programs**: Click stars on any program to rate it (1-5 stars)
+  - Ratings boost programs in future searches
+  - Click same rating again to remove it
+
+### 5. Manage Ratings
+
+In Settings, you can:
+- **Export Ratings**: Download your ratings as JSON backup
+- **Import Ratings**: Restore previously exported ratings
+- **Clear All**: Remove all ratings (with confirmation)
+
+For detailed information about fuzzy search and ratings, see [Fuzzy Search Guide](docs/FUZZY_SEARCH_GUIDE.md).
 
 ## Project Structure
 
@@ -103,9 +127,11 @@ iptv-web/
 ### Dependencies
 
 - **Pako**: For gzip decompression (loaded via CDN)
+- **Snowball Stemmer**: For Russian/English morphology support (loaded via CDN)
+- **Fuse.js**: For fuzzy string matching (loaded via CDN)
 - **Google Fonts**: Montserrat font family
 
-No build tools or package managers required!
+No build tools or package managers required! All dependencies load from CDN.
 
 ### Browser Compatibility
 

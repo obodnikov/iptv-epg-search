@@ -4,6 +4,7 @@
  */
 
 import { formatTimeRange, getProgramStatus, formatDateTime } from '../utils/epgParser.js';
+import { createRatingControl } from './ratingControl.js';
 
 // View mode state
 let currentView = 'grid'; // 'grid' or 'list'
@@ -175,7 +176,18 @@ function createProgramCard(program) {
     ${shortDescription ? `<p class="result-card-description">${escapeHtml(shortDescription)}</p>` : ''}
   `;
 
-  card.addEventListener('click', () => showProgramModal(program));
+  // Add rating control
+  const ratingControl = createRatingControl(program, (rating) => {
+    console.log(`Rating changed for "${program.title}":`, rating);
+  });
+  card.appendChild(ratingControl);
+
+  card.addEventListener('click', (e) => {
+    // Don't open modal if clicking on rating control
+    if (!e.target.closest('.rating-control')) {
+      showProgramModal(program);
+    }
+  });
 
   return card;
 }
@@ -207,7 +219,18 @@ function createProgramListItem(program) {
     </div>
   `;
 
-  item.addEventListener('click', () => showProgramModal(program));
+  // Add rating control
+  const ratingControl = createRatingControl(program, (rating) => {
+    console.log(`Rating changed for "${program.title}":`, rating);
+  });
+  item.appendChild(ratingControl);
+
+  item.addEventListener('click', (e) => {
+    // Don't open modal if clicking on rating control
+    if (!e.target.closest('.rating-control')) {
+      showProgramModal(program);
+    }
+  });
 
   return item;
 }
@@ -256,7 +279,19 @@ function showProgramModal(program) {
         <div class="modal-info-value">${escapeHtml(program.description)}</div>
       </div>
     ` : ''}
+    
+    <div class="modal-rating-section">
+      <label class="modal-rating-label">Your Rating</label>
+      <div id="modalRatingContainer"></div>
+    </div>
   `;
+
+  // Add rating control to modal
+  const ratingContainer = modalBody.querySelector('#modalRatingContainer');
+  const modalRatingControl = createRatingControl(program, (rating) => {
+    console.log(`Rating changed in modal for "${program.title}":`, rating);
+  });
+  ratingContainer.appendChild(modalRatingControl);
 
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';

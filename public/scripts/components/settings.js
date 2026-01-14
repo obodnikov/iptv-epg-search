@@ -4,6 +4,12 @@
  */
 
 import { saveEpgUrl, getEpgUrl } from '../utils/storage.js';
+import { 
+  exportRatings, 
+  importRatings, 
+  clearAllRatings, 
+  getRatingStats 
+} from '../utils/ratings.js';
 
 /**
  * Initialize settings component
@@ -18,8 +24,17 @@ export function initSettings(callbacks = {}) {
   const epgUrlInput = document.getElementById('epgUrl');
   const openSettingsButton = document.getElementById('openSettingsButton');
 
+  // Ratings management buttons
+  const exportRatingsBtn = document.getElementById('exportRatingsBtn');
+  const importRatingsBtn = document.getElementById('importRatingsBtn');
+  const clearRatingsBtn = document.getElementById('clearRatingsBtn');
+  const importRatingsFile = document.getElementById('importRatingsFile');
+
   // Load saved URL
   loadSavedUrl();
+  
+  // Update ratings stats
+  updateRatingsStats();
 
   // Toggle settings panel
   settingsToggle?.addEventListener('click', toggleSettings);
@@ -36,6 +51,19 @@ export function initSettings(callbacks = {}) {
     e.preventDefault();
     handleSaveSettings(callbacks.onSave);
   });
+  
+  // Export ratings
+  exportRatingsBtn?.addEventListener('click', handleExportRatings);
+  
+  // Import ratings
+  importRatingsBtn?.addEventListener('click', () => {
+    importRatingsFile?.click();
+  });
+  
+  importRatingsFile?.addEventListener('change', handleImportRatings);
+  
+  // Clear ratings
+  clearRatingsBtn?.addEventListener('click', handleClearRatings);
 }
 
 /**
@@ -188,4 +216,126 @@ function showSuccess(message) {
 export function hasConfiguredUrl() {
   const url = getEpgUrl();
   return url !== null && url.trim().length > 0;
+}
+
+/**
+ * Handle export ratings
+ */
+function handleExportRatings() {
+  try {
+    const json = exportRatings();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `epg-ratings-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showSuccess('Ratings exported successfully!');
+  } catch (error) {
+    console.error('Export failed:', error);
+    showError('Failed to export ratings');
+  }
+}
+
+/**
+ * Handle import ratings
+ * @param {Event} event - File input change event
+ */
+function handleImportRatings(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const json = e.target.result;
+      const success = importRatings(json);
+      
+      if (success) {
+        showSuccess('Ratings imported successfully!');
+        updateRatingsStats();
+        
+        // Refresh current results if any
+        if (window.appState?.currentResults?.length > 0) {
+          const performSearch = window.performSearch;
+          if (typeof performSearch === 'function') {
+            performSearch();
+          }
+        }
+      } else {
+        showError('Invalid ratings file format');
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      showError('Failed to import ratings');
+    }
+    
+    // Reset file input
+    event.target.value = '';
+  };
+  
+  reader.readAsText(file);
+}
+
+/**
+ * Handle clear ratings
+ */
+function handleClearRatings() {
+  if (!confirm('Are you sure you want to clear all ratings? This cannot be undone.')) {
+    return;
+  }
+  
+  try {
+    const success = clearAllRatings();
+    
+    if (success) {
+      showSuccess('All ratings cleared');
+      updateRatingsStats();
+      
+      // Refresh current results if any
+      if (window.appState?.currentResults?.length > 0) {
+        const performSearch = window.performSearch;
+        if (typeof performSearch === 'function') {
+          performSearch();
+        }
+      }
+    } else {
+      showError('Failed to clear ratings');
+    }
+  } catch (error) {
+    console.error('Clear failed:', error);
+    showError('Failed to clear ratings');
+  }
+}
+
+/**
+ * Update ratings statistics display
+ */
+function updateRatingsStats() {
+  const statsElement = document.getElementById('ratingsStats');
+  if (!statsElement) return;
+  
+  const stats = getRatingStats();
+  
+  if (stats.total === 0) {
+    statsElement.innerHTML = '<p class="text-small text-light">No ratings yet</p>';
+    return;
+  }
+  
+  statsElement.innerHTML = `
+    <div class="rating-stats">
+      <div class="rating-stat-row">
+        <span class="rating-stat-label">Total Ratings:</span>
+        <span class="rating-stat-value">${stats.total}</span>
+      </div>
+      <div class="rating-stat-row">
+        <span class="rating-stat-label">Average Rating:</span>
+        <span class="rating-stat-value">${stats.average.toFixed(1)} ★</span>
+      </div>
+    </div>
+  `;
 }
