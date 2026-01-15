@@ -5,7 +5,8 @@
 
 const STORAGE_KEYS = {
   EPG_URL: 'iptv_epg_url',
-  LAST_UPDATED: 'iptv_epg_last_updated'
+  LAST_UPDATED: 'iptv_epg_last_updated',
+  MANUAL_SEARCH: 'iptv_manual_search_only'
 };
 
 /**
@@ -91,4 +92,34 @@ export function clearStorage() {
 export function hasEpgUrl() {
   const url = getEpgUrl();
   return url !== null && url.trim().length > 0;
+}
+
+/**
+ * Save manual search preference
+ * @param {boolean} enabled - Whether manual search only is enabled
+ * @returns {boolean} - Success status
+ */
+export function saveManualSearchOnly(enabled) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.MANUAL_SEARCH, enabled.toString());
+    return true;
+  } catch (error) {
+    console.error('Error saving manual search preference:', error);
+    return false;
+  }
+}
+
+/**
+ * Get manual search preference
+ * @returns {boolean} - Whether manual search only is enabled (default: true)
+ */
+export function getManualSearchOnly() {
+  try {
+    const value = localStorage.getItem(STORAGE_KEYS.MANUAL_SEARCH);
+    // Default to true (manual search) if not set
+    return value === null ? true : value === 'true';
+  } catch (error) {
+    console.error('Error retrieving manual search preference:', error);
+    return true; // Default to manual search on error
+  }
 }

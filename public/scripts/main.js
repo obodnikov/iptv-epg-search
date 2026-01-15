@@ -38,7 +38,8 @@ window.appState = {
   maxResults: 100, // Limit results to prevent browser freeze
   useFuzzySearch: true, // Toggle for fuzzy vs exact search
   fuzzyThreshold: 0.4, // Fuzzy matching sensitivity (0 = exact, 1 = match anything)
-  searchDebounceMs: 300 // Debounce delay for search input (configurable)
+  searchDebounceMs: 300, // Debounce delay for search input (configurable)
+  manualSearchOnly: true // Manual search only mode (default: true)
 };
 
 const appState = window.appState;
@@ -92,14 +93,17 @@ function initControls() {
   searchInput?.addEventListener('input', (e) => {
     appState.searchQuery = e.target.value;
     toggleClearButton(e.target.value);
-    
-    // Debounce search (configurable delay after user stops typing)
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-      if (appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
-        performSearch();
-      }
-    }, appState.searchDebounceMs);
+
+    // Only trigger auto-search if manual search mode is disabled
+    if (!appState.manualSearchOnly) {
+      // Debounce search (configurable delay after user stops typing)
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        if (appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+          performSearch();
+        }
+      }, appState.searchDebounceMs);
+    }
   });
 
   // Clear search button
@@ -107,7 +111,11 @@ function initControls() {
     searchInput.value = '';
     appState.searchQuery = '';
     toggleClearButton('');
-    performSearch();
+    // In auto-search mode, trigger search to show all/filtered results
+    // In manual mode, user must click Search button or press Enter
+    if (!appState.manualSearchOnly) {
+      performSearch();
+    }
   });
 
   // Search button

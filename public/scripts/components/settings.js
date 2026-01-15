@@ -3,12 +3,12 @@
  * Manages EPG URL settings UI and interactions
  */
 
-import { saveEpgUrl, getEpgUrl } from '../utils/storage.js';
-import { 
-  exportRatings, 
-  importRatings, 
-  clearAllRatings, 
-  getRatingStats 
+import { saveEpgUrl, getEpgUrl, saveManualSearchOnly, getManualSearchOnly } from '../utils/storage.js';
+import {
+  exportRatings,
+  importRatings,
+  clearAllRatings,
+  getRatingStats
 } from '../utils/ratings.js';
 
 /**
@@ -30,9 +30,15 @@ export function initSettings(callbacks = {}) {
   const clearRatingsBtn = document.getElementById('clearRatingsBtn');
   const importRatingsFile = document.getElementById('importRatingsFile');
 
+  // Manual search checkbox
+  const manualSearchCheckbox = document.getElementById('manualSearchOnly');
+
   // Load saved URL
   loadSavedUrl();
-  
+
+  // Load saved manual search preference
+  loadManualSearchPreference();
+
   // Update ratings stats
   updateRatingsStats();
 
@@ -82,6 +88,23 @@ function loadSavedUrl() {
 }
 
 /**
+ * Load manual search preference into checkbox
+ */
+function loadManualSearchPreference() {
+  const manualSearchCheckbox = document.getElementById('manualSearchOnly');
+  const manualSearchEnabled = getManualSearchOnly();
+
+  if (manualSearchCheckbox) {
+    manualSearchCheckbox.checked = manualSearchEnabled;
+  }
+
+  // Update appState if it exists
+  if (window.appState) {
+    window.appState.manualSearchOnly = manualSearchEnabled;
+  }
+}
+
+/**
  * Toggle settings panel visibility
  */
 function toggleSettings() {
@@ -121,6 +144,7 @@ export function hideSettings() {
  */
 function handleSaveSettings(onSaveCallback) {
   const epgUrlInput = document.getElementById('epgUrl');
+  const manualSearchCheckbox = document.getElementById('manualSearchOnly');
   const url = epgUrlInput?.value?.trim();
 
   if (!url) {
@@ -136,10 +160,19 @@ function handleSaveSettings(onSaveCallback) {
     return;
   }
 
-  // Save to localStorage
-  const success = saveEpgUrl(url);
+  // Save EPG URL to localStorage
+  const urlSuccess = saveEpgUrl(url);
 
-  if (success) {
+  // Save manual search preference
+  const manualSearchEnabled = manualSearchCheckbox?.checked ?? true;
+  const manualSearchSuccess = saveManualSearchOnly(manualSearchEnabled);
+
+  // Update appState
+  if (window.appState) {
+    window.appState.manualSearchOnly = manualSearchEnabled;
+  }
+
+  if (urlSuccess && manualSearchSuccess) {
     hideSettings();
     showSuccess('Settings saved successfully!');
 
