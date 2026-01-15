@@ -133,7 +133,11 @@ function initControls() {
   searchScopeRadios.forEach(radio => {
     radio.addEventListener('change', (e) => {
       appState.searchScope = e.target.value;
-      performSearch();
+      // In manual mode, user must click Search button or press Enter
+      // In auto mode, trigger search immediately
+      if (!appState.manualSearchOnly) {
+        performSearch();
+      }
     });
   });
 
@@ -141,7 +145,11 @@ function initControls() {
   timeFilterRadios.forEach(radio => {
     radio.addEventListener('change', (e) => {
       appState.timeFilter = e.target.value;
-      performSearch();
+      // In manual mode, user must click Search button or press Enter
+      // In auto mode, trigger search immediately
+      if (!appState.manualSearchOnly) {
+        performSearch();
+      }
     });
   });
 
