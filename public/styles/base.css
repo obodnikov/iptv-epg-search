@@ -193,6 +193,10 @@ p {
   text-align: center;
 }
 
+.text-center p {
+  margin-inline: auto;
+}
+
 .text-right {
   text-align: right;
 }
