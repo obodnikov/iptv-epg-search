@@ -255,6 +255,7 @@ function updateThresholdDisplay() {
 /**
  * Update Best Match sort option availability
  * Enables when: fuzzy search is enabled AND there's a search query (2+ chars)
+ * Auto-selects Best Match when it becomes available
  */
 function updateBestMatchOption() {
   const sortSelect = document.getElementById('sortSelect');
@@ -267,7 +268,16 @@ function updateBestMatchOption() {
                           appState.fuseIndex &&
                           query.length >= 2;
 
+  const wasDisabled = bestMatchOption.disabled;
   bestMatchOption.disabled = !canUseBestMatch;
+
+  // Auto-select Best Match when it becomes available
+  if (canUseBestMatch && wasDisabled) {
+    appState.sortBy = 'best-match';
+    if (sortSelect) {
+      sortSelect.value = 'best-match';
+    }
+  }
 
   // If Best Match is currently selected but becomes unavailable, switch to time-asc
   if (!canUseBestMatch && appState.sortBy === 'best-match') {
