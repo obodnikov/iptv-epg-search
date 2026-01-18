@@ -81,6 +81,11 @@
   padding-right: 3rem;
 }
 
+.form-select option:disabled {
+  color: var(--sqowe-light-grey);
+  font-style: italic;
+}
+
 /* ========================================
    Input States
    ======================================== */

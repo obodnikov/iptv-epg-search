@@ -97,6 +97,9 @@ function initControls() {
     appState.searchQuery = e.target.value;
     toggleClearButton(e.target.value);
 
+    // Update Best Match option availability as user types
+    updateBestMatchOption();
+
     // Only trigger auto-search if manual search mode is disabled
     if (!appState.manualSearchOnly) {
       // Debounce search (configurable delay after user stops typing)
@@ -114,6 +117,7 @@ function initControls() {
     searchInput.value = '';
     appState.searchQuery = '';
     toggleClearButton('');
+    updateBestMatchOption();
     // In auto-search mode, trigger search to show all/filtered results
     // In manual mode, user must click Search button or press Enter
     if (!appState.manualSearchOnly) {
@@ -161,6 +165,9 @@ function initControls() {
     appState.sortBy = e.target.value;
     performSearch();
   });
+
+  // Initialize Best Match option state
+  updateBestMatchOption();
 
   // Fuzzy search toggle - only update UI, don't trigger search
   // Actual appState update happens on Save in settings
@@ -242,6 +249,32 @@ function updateThresholdDisplay() {
     else label = 'Very Loose';
 
     display.textContent = `${label} (${threshold.toFixed(2)})`;
+  }
+}
+
+/**
+ * Update Best Match sort option availability
+ * Enables when: fuzzy search is enabled AND there's a search query (2+ chars)
+ */
+function updateBestMatchOption() {
+  const sortSelect = document.getElementById('sortSelect');
+  const bestMatchOption = sortSelect?.querySelector('option[value="best-match"]');
+
+  if (!bestMatchOption) return;
+
+  const query = appState.searchQuery?.trim() || '';
+  const canUseBestMatch = appState.useFuzzySearch &&
+                          appState.fuseIndex &&
+                          query.length >= 2;
+
+  bestMatchOption.disabled = !canUseBestMatch;
+
+  // If Best Match is currently selected but becomes unavailable, switch to time-asc
+  if (!canUseBestMatch && appState.sortBy === 'best-match') {
+    appState.sortBy = 'time-asc';
+    if (sortSelect) {
+      sortSelect.value = 'time-asc';
+    }
   }
 }
 
@@ -388,9 +421,12 @@ async function loadEpgData() {
 
     // Show info message instead of all results
     showDataLoadedMessage(epgData.totalPrograms, epgData.totalChannels);
-    
+
     // Update fuzzy search UI
     updateFuzzySearchUI();
+
+    // Update Best Match option availability (now that index is ready)
+    updateBestMatchOption();
 
     console.log('EPG data loaded successfully');
   } catch (error) {
@@ -446,6 +482,9 @@ function performSearch() {
 
   // Validate search query
   const query = appState.searchQuery.trim();
+
+  // Update Best Match option availability
+  updateBestMatchOption();
 
   // Require minimum 2 characters for text search
   if (query.length > 0 && query.length < 2) {
@@ -517,15 +556,21 @@ function performSearch() {
       });
     }
 
-    // Apply rating boost
+    // Apply rating boost (for fuzzy results with scores)
     const boosted = applyRatingBoost(filtered);
 
-    // Sort by selected criteria (if not using fuzzy scores)
+    // Sort by selected criteria
     let sorted;
-    if (appState.useFuzzySearch && appState.fuseIndex && query.length >= 2) {
-      // Fuzzy results are already sorted by relevance + rating boost
+    const isFuzzyActive = appState.useFuzzySearch && appState.fuseIndex && query.length >= 2;
+
+    if (appState.sortBy === 'best-match' && isFuzzyActive) {
+      // Best Match: use fuzzy scores + rating boost (already applied)
       sorted = boosted;
+    } else if (appState.sortBy === 'best-match' && !isFuzzyActive) {
+      // Fallback if Best Match selected but fuzzy not active
+      sorted = sortPrograms(boosted, 'time-asc');
     } else {
+      // Other sort options: apply standard sorting
       sorted = sortPrograms(boosted, appState.sortBy);
     }
 
