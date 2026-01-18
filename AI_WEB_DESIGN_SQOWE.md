@@ -178,6 +178,22 @@ p, .body-text {
 - Maintain line length of 60-75 characters for optimal readability
 - Use line-height of 1.6-1.8 for body text
 
+### 2.6 Block Element Centering
+
+When using `.text-center` on containers with block elements that have constrained widths (like `max-width: 70ch` on paragraphs):
+
+**Rule:** Always include `margin-inline: auto` to center the block element itself, not just its text content.
+
+```css
+.text-center p {
+  margin-inline: auto;
+}
+```
+
+**Why:** `text-align: center` only centers inline content within the element. Block elements with `max-width` remain left-aligned unless explicitly centered with `margin-inline: auto`.
+
+**Example issue:** Two paragraphs with different text lengths appear misaligned because each has different rendered widths despite both being "centered."
+
 ---
 
 ## 3. Logo Usage
