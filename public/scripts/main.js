@@ -26,6 +26,9 @@ import {
   getFuzzySearchStatus 
 } from './utils/fuzzySearch.js';
 
+// Expose performSearch globally for settings component
+window.performSearch = null; // Will be set after function definition
+
 // Application state (expose globally for view toggle)
 window.appState = {
   epgData: null,
@@ -159,21 +162,16 @@ function initControls() {
     performSearch();
   });
 
-  // Fuzzy search toggle
+  // Fuzzy search toggle - only update UI, don't trigger search
+  // Actual appState update happens on Save in settings
   fuzzyToggle?.addEventListener('change', (e) => {
-    appState.useFuzzySearch = e.target.checked;
     updateFuzzySearchUI();
-    performSearch();
   });
 
-  // Fuzzy threshold slider
+  // Fuzzy threshold slider - only update display, don't trigger search
+  // Actual appState update happens on Save in settings
   fuzzyThresholdSlider?.addEventListener('input', (e) => {
-    appState.fuzzyThreshold = parseFloat(e.target.value);
     updateThresholdDisplay();
-  });
-
-  fuzzyThresholdSlider?.addEventListener('change', () => {
-    performSearch();
   });
 
   // Load EPG button
@@ -201,44 +199,48 @@ function updateFuzzySearchUI() {
   const fuzzyToggle = document.getElementById('fuzzySearchToggle');
   const fuzzySettings = document.getElementById('fuzzySearchSettings');
   const fuzzyStatus = document.getElementById('fuzzySearchStatus');
-  
+
   // Check if fuzzy search is available
   const isAvailable = isFuzzySearchAvailable();
-  
+
   if (fuzzyToggle) {
     fuzzyToggle.disabled = !isAvailable;
     if (!isAvailable) {
       fuzzyToggle.checked = false;
-      appState.useFuzzySearch = false;
     }
   }
-  
+
+  // Use checkbox value for UI display (shows/hides threshold slider)
+  const isChecked = fuzzyToggle?.checked ?? false;
+
   if (fuzzySettings) {
-    fuzzySettings.style.display = appState.useFuzzySearch && isAvailable ? 'block' : 'none';
+    fuzzySettings.style.display = isChecked && isAvailable ? 'block' : 'none';
   }
-  
+
   if (fuzzyStatus) {
     fuzzyStatus.textContent = getFuzzySearchStatus();
     fuzzyStatus.className = isAvailable ? 'text-small text-success' : 'text-small text-warning';
   }
-  
+
   updateThresholdDisplay();
 }
 
 /**
  * Update threshold display
+ * Reads value from slider element for UI preview
  */
 function updateThresholdDisplay() {
   const display = document.getElementById('fuzzyThresholdValue');
-  if (display) {
-    const threshold = appState.fuzzyThreshold;
+  const slider = document.getElementById('fuzzyThreshold');
+  if (display && slider) {
+    const threshold = parseFloat(slider.value);
     let label = 'Medium';
     if (threshold <= 0.2) label = 'Very Strict';
     else if (threshold <= 0.3) label = 'Strict';
     else if (threshold <= 0.5) label = 'Medium';
     else if (threshold <= 0.7) label = 'Loose';
     else label = 'Very Loose';
-    
+
     display.textContent = `${label} (${threshold.toFixed(2)})`;
   }
 }
@@ -399,6 +401,40 @@ async function loadEpgData() {
 }
 
 /**
+ * Show search in progress indicator
+ */
+function showSearching() {
+  const searchButton = document.getElementById('searchButton');
+  const sortSelect = document.getElementById('sortSelect');
+
+  if (searchButton) {
+    searchButton.classList.add('btn-loading');
+    searchButton.disabled = true;
+  }
+
+  if (sortSelect) {
+    sortSelect.disabled = true;
+  }
+}
+
+/**
+ * Hide search in progress indicator
+ */
+function hideSearching() {
+  const searchButton = document.getElementById('searchButton');
+  const sortSelect = document.getElementById('sortSelect');
+
+  if (searchButton) {
+    searchButton.classList.remove('btn-loading');
+    searchButton.disabled = false;
+  }
+
+  if (sortSelect) {
+    sortSelect.disabled = false;
+  }
+}
+
+/**
  * Perform search with current filters
  */
 function performSearch() {
@@ -423,6 +459,9 @@ function performSearch() {
     return;
   }
 
+  // Show searching indicator
+  showSearching();
+
   console.log('Performing search with:', {
     query: appState.searchQuery,
     scope: appState.searchScope,
@@ -435,71 +474,80 @@ function performSearch() {
   hideError();
   hideNoData();
 
-  let filtered;
+  // Use setTimeout to allow UI to update before heavy search operation
+  setTimeout(() => {
+    let filtered;
 
-  // Use fuzzy search if enabled and available
-  if (appState.useFuzzySearch && appState.fuseIndex && query.length >= 2) {
-    console.log('Using fuzzy search');
-    
-    // Check if index is ready (not null)
-    if (!appState.fuseIndex) {
-      console.warn('Fuzzy search index not ready, falling back to exact search');
+    // Use fuzzy search if enabled and available
+    if (appState.useFuzzySearch && appState.fuseIndex && query.length >= 2) {
+      console.log('Using fuzzy search');
+
+      // Check if index is ready (not null)
+      if (!appState.fuseIndex) {
+        console.warn('Fuzzy search index not ready, falling back to exact search');
+        filtered = applyFilters(appState.epgData.programs, {
+          searchQuery: appState.searchQuery,
+          searchScope: appState.searchScope,
+          timeFilter: appState.timeFilter
+        });
+      } else {
+        // Perform fuzzy search
+        const fuzzyResults = fuzzySearch(appState.fuseIndex, query, {
+          scope: appState.searchScope,
+          threshold: appState.fuzzyThreshold
+        });
+
+        // Apply time filter to fuzzy results
+        filtered = applyFilters(fuzzyResults, {
+          searchQuery: '', // Already searched
+          searchScope: appState.searchScope,
+          timeFilter: appState.timeFilter
+        });
+
+        console.log(`Fuzzy search found ${fuzzyResults.length} matches, ${filtered.length} after time filter`);
+      }
+    } else {
+      console.log('Using exact search');
+
+      // Use exact match search
       filtered = applyFilters(appState.epgData.programs, {
         searchQuery: appState.searchQuery,
         searchScope: appState.searchScope,
         timeFilter: appState.timeFilter
       });
-    } else {
-      // Perform fuzzy search
-      const fuzzyResults = fuzzySearch(appState.fuseIndex, query, {
-        scope: appState.searchScope,
-        threshold: appState.fuzzyThreshold
-      });
-      
-      // Apply time filter to fuzzy results
-      filtered = applyFilters(fuzzyResults, {
-        searchQuery: '', // Already searched
-        searchScope: appState.searchScope,
-        timeFilter: appState.timeFilter
-      });
-      
-      console.log(`Fuzzy search found ${fuzzyResults.length} matches, ${filtered.length} after time filter`);
     }
-  } else {
-    console.log('Using exact search');
-    
-    // Use exact match search
-    filtered = applyFilters(appState.epgData.programs, {
-      searchQuery: appState.searchQuery,
-      searchScope: appState.searchScope,
-      timeFilter: appState.timeFilter
-    });
-  }
 
-  // Apply rating boost
-  const boosted = applyRatingBoost(filtered);
+    // Apply rating boost
+    const boosted = applyRatingBoost(filtered);
 
-  // Sort by selected criteria (if not using fuzzy scores)
-  let sorted;
-  if (appState.useFuzzySearch && appState.fuseIndex && query.length >= 2) {
-    // Fuzzy results are already sorted by relevance + rating boost
-    sorted = boosted;
-  } else {
-    sorted = sortPrograms(boosted, appState.sortBy);
-  }
+    // Sort by selected criteria (if not using fuzzy scores)
+    let sorted;
+    if (appState.useFuzzySearch && appState.fuseIndex && query.length >= 2) {
+      // Fuzzy results are already sorted by relevance + rating boost
+      sorted = boosted;
+    } else {
+      sorted = sortPrograms(boosted, appState.sortBy);
+    }
 
-  // Limit results to prevent browser freeze
-  const limited = sorted.slice(0, appState.maxResults);
-  const hasMore = sorted.length > appState.maxResults;
+    // Limit results to prevent browser freeze
+    const limited = sorted.slice(0, appState.maxResults);
+    const hasMore = sorted.length > appState.maxResults;
 
-  // Store current results
-  appState.currentResults = limited;
+    // Store current results
+    appState.currentResults = limited;
 
-  // Display results
-  displayResults(limited, hasMore, sorted.length);
+    // Display results
+    displayResults(limited, hasMore, sorted.length);
 
-  console.log(`Found ${sorted.length} results, displaying ${limited.length}`);
+    console.log(`Found ${sorted.length} results, displaying ${limited.length}`);
+
+    // Hide searching indicator
+    hideSearching();
+  }, 0);
 }
+
+// Expose performSearch globally for settings component
+window.performSearch = performSearch;
 
 /**
  * Handle errors globally

@@ -6,7 +6,9 @@
 const STORAGE_KEYS = {
   EPG_URL: 'iptv_epg_url',
   LAST_UPDATED: 'iptv_epg_last_updated',
-  MANUAL_SEARCH: 'iptv_manual_search_only'
+  MANUAL_SEARCH: 'iptv_manual_search_only',
+  FUZZY_SEARCH_ENABLED: 'iptv_fuzzy_search_enabled',
+  FUZZY_THRESHOLD: 'iptv_fuzzy_threshold'
 };
 
 /**
@@ -121,5 +123,65 @@ export function getManualSearchOnly() {
   } catch (error) {
     console.error('Error retrieving manual search preference:', error);
     return true; // Default to manual search on error
+  }
+}
+
+/**
+ * Save fuzzy search enabled preference
+ * @param {boolean} enabled - Whether fuzzy search is enabled
+ * @returns {boolean} - Success status
+ */
+export function saveFuzzySearchEnabled(enabled) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.FUZZY_SEARCH_ENABLED, enabled.toString());
+    return true;
+  } catch (error) {
+    console.error('Error saving fuzzy search preference:', error);
+    return false;
+  }
+}
+
+/**
+ * Get fuzzy search enabled preference
+ * @returns {boolean} - Whether fuzzy search is enabled (default: true)
+ */
+export function getFuzzySearchEnabled() {
+  try {
+    const value = localStorage.getItem(STORAGE_KEYS.FUZZY_SEARCH_ENABLED);
+    // Default to true (fuzzy search enabled) if not set
+    return value === null ? true : value === 'true';
+  } catch (error) {
+    console.error('Error retrieving fuzzy search preference:', error);
+    return true; // Default to fuzzy search enabled on error
+  }
+}
+
+/**
+ * Save fuzzy search threshold preference
+ * @param {number} threshold - Fuzzy threshold value (0.1 to 0.9)
+ * @returns {boolean} - Success status
+ */
+export function saveFuzzyThreshold(threshold) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.FUZZY_THRESHOLD, threshold.toString());
+    return true;
+  } catch (error) {
+    console.error('Error saving fuzzy threshold:', error);
+    return false;
+  }
+}
+
+/**
+ * Get fuzzy search threshold preference
+ * @returns {number} - Fuzzy threshold value (default: 0.4)
+ */
+export function getFuzzyThreshold() {
+  try {
+    const value = localStorage.getItem(STORAGE_KEYS.FUZZY_THRESHOLD);
+    // Default to 0.4 (medium) if not set
+    return value === null ? 0.4 : parseFloat(value);
+  } catch (error) {
+    console.error('Error retrieving fuzzy threshold:', error);
+    return 0.4; // Default to medium on error
   }
 }

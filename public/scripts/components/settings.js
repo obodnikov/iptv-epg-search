@@ -3,7 +3,7 @@
  * Manages EPG URL settings UI and interactions
  */
 
-import { saveEpgUrl, getEpgUrl, saveManualSearchOnly, getManualSearchOnly } from '../utils/storage.js';
+import { saveEpgUrl, getEpgUrl, saveManualSearchOnly, getManualSearchOnly, saveFuzzySearchEnabled, getFuzzySearchEnabled, saveFuzzyThreshold, getFuzzyThreshold } from '../utils/storage.js';
 import {
   exportRatings,
   importRatings,
@@ -38,6 +38,9 @@ export function initSettings(callbacks = {}) {
 
   // Load saved manual search preference
   loadManualSearchPreference();
+
+  // Load saved fuzzy search preference
+  loadFuzzySearchPreference();
 
   // Update ratings stats
   updateRatingsStats();
@@ -105,6 +108,30 @@ function loadManualSearchPreference() {
 }
 
 /**
+ * Load fuzzy search preference into checkbox and appState
+ */
+function loadFuzzySearchPreference() {
+  const fuzzySearchCheckbox = document.getElementById('fuzzySearchToggle');
+  const fuzzyThresholdSlider = document.getElementById('fuzzyThreshold');
+  const fuzzySearchEnabled = getFuzzySearchEnabled();
+  const fuzzyThreshold = getFuzzyThreshold();
+
+  if (fuzzySearchCheckbox) {
+    fuzzySearchCheckbox.checked = fuzzySearchEnabled;
+  }
+
+  if (fuzzyThresholdSlider) {
+    fuzzyThresholdSlider.value = fuzzyThreshold;
+  }
+
+  // Update appState if it exists
+  if (window.appState) {
+    window.appState.useFuzzySearch = fuzzySearchEnabled;
+    window.appState.fuzzyThreshold = fuzzyThreshold;
+  }
+}
+
+/**
  * Toggle settings panel visibility
  */
 function toggleSettings() {
@@ -145,6 +172,8 @@ export function hideSettings() {
 function handleSaveSettings(onSaveCallback) {
   const epgUrlInput = document.getElementById('epgUrl');
   const manualSearchCheckbox = document.getElementById('manualSearchOnly');
+  const fuzzySearchCheckbox = document.getElementById('fuzzySearchToggle');
+  const fuzzyThresholdSlider = document.getElementById('fuzzyThreshold');
   const url = epgUrlInput?.value?.trim();
 
   if (!url) {
@@ -167,18 +196,43 @@ function handleSaveSettings(onSaveCallback) {
   const manualSearchEnabled = manualSearchCheckbox?.checked ?? true;
   const manualSearchSuccess = saveManualSearchOnly(manualSearchEnabled);
 
+  // Save fuzzy search preference
+  const fuzzySearchEnabled = fuzzySearchCheckbox?.checked ?? true;
+  const fuzzySearchSuccess = saveFuzzySearchEnabled(fuzzySearchEnabled);
+
+  // Save fuzzy threshold
+  const fuzzyThreshold = fuzzyThresholdSlider ? parseFloat(fuzzyThresholdSlider.value) : 0.4;
+  const thresholdSuccess = saveFuzzyThreshold(fuzzyThreshold);
+
+  // Track if fuzzy search settings changed
+  const fuzzySearchChanged = window.appState && (
+    window.appState.useFuzzySearch !== fuzzySearchEnabled ||
+    window.appState.fuzzyThreshold !== fuzzyThreshold
+  );
+
   // Update appState
   if (window.appState) {
     window.appState.manualSearchOnly = manualSearchEnabled;
+    window.appState.useFuzzySearch = fuzzySearchEnabled;
+    window.appState.fuzzyThreshold = fuzzyThreshold;
   }
 
-  if (urlSuccess && manualSearchSuccess) {
+  if (urlSuccess && manualSearchSuccess && fuzzySearchSuccess && thresholdSuccess) {
     hideSettings();
     showSuccess('Settings saved successfully!');
 
     // Call callback if provided
     if (typeof onSaveCallback === 'function') {
       onSaveCallback(url);
+    }
+
+    // Trigger search if fuzzy search settings changed and we have EPG data
+    if (fuzzySearchChanged && window.appState?.epgData) {
+      Promise.resolve().then(() => {
+        if (typeof window.performSearch === 'function') {
+          window.performSearch();
+        }
+      });
     }
   } else {
     showError('Failed to save settings');
