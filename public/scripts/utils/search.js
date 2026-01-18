@@ -4,6 +4,7 @@
  */
 
 import { getProgramStatus } from './epgParser.js';
+import { getRating, getProgramId } from './ratings.js';
 
 /**
  * Search programs by title, description, or channel
@@ -165,4 +166,32 @@ export function paginate(items, page = 1, perPage = 20) {
     hasNextPage: currentPage < totalPages,
     hasPrevPage: currentPage > 1
   };
+}
+
+/**
+ * Apply rating boost to search results
+ * Higher-rated programs appear first among equal search scores
+ * @param {Array} programs - Array of program objects (may have fuzzyScore)
+ * @returns {Array} - Programs sorted with rating boost
+ */
+export function applyRatingBoost(programs) {
+  return [...programs].sort((a, b) => {
+    // If both have fuzzy scores, use those first
+    const scoreA = a.fuzzyScore !== undefined ? a.fuzzyScore : 1;
+    const scoreB = b.fuzzyScore !== undefined ? b.fuzzyScore : 1;
+    
+    // Lower fuzzy score = better match (Fuse.js convention)
+    const scoreDiff = scoreA - scoreB;
+    
+    // If scores are very close (within 0.05), use rating as tiebreaker
+    if (Math.abs(scoreDiff) < 0.05) {
+      const ratingA = getRating(getProgramId(a)) || 0;
+      const ratingB = getRating(getProgramId(b)) || 0;
+      
+      // Higher rating comes first
+      return ratingB - ratingA;
+    }
+    
+    return scoreDiff;
+  });
 }

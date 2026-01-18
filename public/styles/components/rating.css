@@ -1,0 +1,231 @@
+/**
+ * rating.css - Rating Component Styles
+ * Styles for star rating controls following sqowe brand
+ */
+
+/* Rating Control Container */
+.rating-control {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  padding: 0.25rem 0;
+}
+
+/* Individual Star Button */
+.rating-star {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--color-border);
+  transition: color 0.2s ease, transform 0.1s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rating-star:hover {
+  color: var(--color-primary);
+  transform: scale(1.1);
+}
+
+.rating-star:active {
+  transform: scale(0.95);
+}
+
+.rating-star.filled {
+  color: var(--color-primary);
+}
+
+.rating-star:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Keyboard navigation */
+.rating-star:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Read-only Rating Display */
+.rating-display {
+  display: inline-flex;
+  gap: 0.125rem;
+  align-items: center;
+}
+
+.rating-star-display {
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--color-primary);
+}
+
+.rating-none {
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+
+/* Rating in Cards */
+.result-card .rating-control,
+.result-list-item .rating-control {
+  margin-top: 0.5rem;
+}
+
+/* Rating in Modal */
+.modal-rating-section {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+}
+
+.modal-rating-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-light);
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.modal-body .rating-control {
+  margin-top: 0.5rem;
+}
+
+.modal-body .rating-star {
+  font-size: 2rem;
+}
+
+/* Compact Rating for List View */
+.result-list-item .rating-control {
+  margin-top: 0.25rem;
+}
+
+.result-list-item .rating-star {
+  font-size: 1.25rem;
+}
+
+/* Rating Stats Display */
+.rating-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: var(--space-md);
+  background: var(--color-background);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.rating-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.rating-stat-label {
+  color: var(--color-text-light);
+}
+
+.rating-stat-value {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+/* Rating Distribution Bar */
+.rating-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: var(--space-md);
+}
+
+.rating-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rating-bar-label {
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+  min-width: 3rem;
+}
+
+.rating-bar-container {
+  flex: 1;
+  height: 1.25rem;
+  background: var(--color-background);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.rating-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.rating-bar-count {
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+  min-width: 2rem;
+  text-align: right;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .rating-star {
+    font-size: 1.25rem;
+  }
+  
+  .modal-body .rating-star {
+    font-size: 1.75rem;
+  }
+  
+  .rating-control {
+    gap: 0.125rem;
+  }
+}
+
+/* Dark Mode Support (if implemented) */
+@media (prefers-color-scheme: dark) {
+  .rating-star {
+    color: var(--color-border);
+  }
+  
+  .rating-star:hover,
+  .rating-star.filled {
+    color: var(--color-primary);
+  }
+}
+
+/* Animation for rating change */
+@keyframes rating-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.rating-star.rating-changed {
+  animation: rating-pulse 0.3s ease;
+}
+
+/* Accessibility: High Contrast Mode */
+@media (prefers-contrast: high) {
+  .rating-star {
+    border: 1px solid currentColor;
+    padding: 0.125rem;
+  }
+  
+  .rating-star:focus {
+    outline-width: 3px;
+  }
+}
