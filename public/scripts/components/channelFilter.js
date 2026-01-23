@@ -219,8 +219,15 @@ function groupChannelsByCategory(channels) {
  * @returns {string} - Category key
  */
 function detectCategory(channel) {
-  const name = channel.name;
-  const id = channel.id;
+  // Validate channel object
+  if (!channel || typeof channel !== 'object') {
+    return 'general';
+  }
+
+  const name = typeof channel.name === 'string' ? channel.name : '';
+  const id = typeof channel.id === 'string' || typeof channel.id === 'number'
+    ? String(channel.id)
+    : '';
 
   // Check each category
   for (const [category, config] of Object.entries(CHANNEL_CATEGORIES)) {
