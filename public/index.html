@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="styles/components/form.css">
   <link rel="stylesheet" href="styles/components/modal.css">
   <link rel="stylesheet" href="styles/components/rating.css">
+  <link rel="stylesheet" href="styles/components/channel-filter.css">
 </head>
 <body>
 
@@ -250,6 +251,10 @@
                 <option value="title-asc">Title (A-Z)</option>
               </select>
             </div>
+            <button type="button" class="channel-filter-btn" id="channelFilterBtn" aria-label="Filter channels">
+              Channels
+              <span class="channel-filter-badge" id="channelFilterBadge" style="display: none;"></span>
+            </button>
             <p id="resultsCount" class="text-small text-light"></p>
           </div>
         </div>
@@ -280,6 +285,58 @@
       </div>
       <div class="modal-body" id="modalBody">
         <!-- Dynamic content will be inserted here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Channel Filter Popup -->
+  <div id="channelFilterPopup" class="channel-filter-popup">
+    <div class="channel-filter-content">
+      <div class="channel-filter-header">
+        <h2 class="channel-filter-title">Channel Filter</h2>
+        <button type="button" class="channel-filter-close" id="channelFilterClose" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="channel-filter-body">
+        <!-- Search -->
+        <div class="channel-filter-search">
+          <input type="text"
+                 id="channelFilterInput"
+                 class="channel-filter-input"
+                 placeholder="Filter channels by name...">
+        </div>
+
+        <!-- Quick Filters -->
+        <div class="channel-filter-quick">
+          <span class="channel-filter-quick-label">Quick Filters:</span>
+          <div class="channel-filter-quick-buttons">
+            <button type="button" class="channel-quick-btn" data-quick-filter="all-hd">All HD</button>
+            <button type="button" class="channel-quick-btn" data-quick-filter="news">News</button>
+            <button type="button" class="channel-quick-btn" data-quick-filter="movies">Movies</button>
+            <button type="button" class="channel-quick-btn" data-quick-filter="general">General</button>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="channel-filter-actions">
+          <button type="button" class="channel-action-btn" id="channelSelectAll">Select All</button>
+          <button type="button" class="channel-action-btn" id="channelClearAll">Clear All</button>
+          <button type="button" class="channel-action-btn btn-outline" id="channelInvert">Invert</button>
+          <span class="channel-selection-count" id="channelSelectionCount">0 / 0 selected</span>
+        </div>
+
+        <!-- Channel List -->
+        <div class="channel-list-container" id="channelListContainer">
+          <!-- Channels will be dynamically inserted here -->
+        </div>
+      </div>
+      <div class="channel-filter-footer">
+        <div class="channel-filter-error" id="channelFilterError">
+          Select at least 1 channel
+        </div>
+        <div class="channel-filter-buttons">
+          <button type="button" class="channel-filter-btn-cancel" id="channelFilterCancel">Cancel</button>
+          <button type="button" class="channel-filter-btn-apply" id="channelFilterApply">Apply</button>
+        </div>
       </div>
     </div>
   </div>

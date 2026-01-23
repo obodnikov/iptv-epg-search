@@ -18,13 +18,18 @@ import {
 } from './components/results.js';
 import { fetchEpgData, parseEpgXml, analyzeEpgXml } from './utils/epgParser.js';
 import { getEpgUrl, saveLastUpdated } from './utils/storage.js';
-import { applyFilters, sortPrograms, applyRatingBoost } from './utils/search.js';
-import { 
-  initSearchIndex, 
-  fuzzySearch, 
+import { applyFilters, sortPrograms, applyRatingBoost, filterByChannels } from './utils/search.js';
+import {
+  initSearchIndex,
+  fuzzySearch,
   isFuzzySearchAvailable,
-  getFuzzySearchStatus 
+  getFuzzySearchStatus
 } from './utils/fuzzySearch.js';
+import {
+  initChannelFilter,
+  updateChannels,
+  getSelectedChannelIds
+} from './components/channelFilter.js';
 
 // Expose performSearch globally for settings component
 window.performSearch = null; // Will be set after function definition
@@ -42,7 +47,8 @@ window.appState = {
   useFuzzySearch: true, // Toggle for fuzzy vs exact search
   fuzzyThreshold: 0.4, // Fuzzy matching sensitivity (0 = exact, 1 = match anything)
   searchDebounceMs: 300, // Debounce delay for search input (configurable)
-  manualSearchOnly: true // Manual search only mode (default: true)
+  manualSearchOnly: true, // Manual search only mode (default: true)
+  selectedChannels: null // Selected channel IDs for filtering (null = all channels)
 };
 
 const appState = window.appState;
@@ -66,6 +72,11 @@ function init() {
 
   // Initialize modal
   initModal();
+
+  // Initialize channel filter
+  initChannelFilter({
+    onSelectionChange: handleChannelSelectionChange
+  });
 
   // Check if EPG URL is configured
   if (!hasConfiguredUrl()) {
@@ -298,6 +309,20 @@ function handleSettingsSaved() {
 }
 
 /**
+ * Handle channel selection change
+ * @param {Array} selectedChannelIds - Array of selected channel IDs
+ */
+function handleChannelSelectionChange(selectedChannelIds) {
+  console.log('Channel selection changed:', selectedChannelIds.length, 'channels selected');
+  appState.selectedChannels = new Set(selectedChannelIds);
+
+  // Re-run search if we have results
+  if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+    performSearch();
+  }
+}
+
+/**
  * Show data loaded message
  * @param {number} totalPrograms - Total programs loaded
  * @param {number} totalChannels - Total channels loaded
@@ -389,6 +414,15 @@ async function loadEpgData() {
 
     // Store in app state
     appState.epgData = epgData;
+
+    // Update channel filter with available channels
+    updateChannels(epgData.channels);
+
+    // Get initial selected channels
+    const selectedIds = getSelectedChannelIds();
+    if (selectedIds.length > 0) {
+      appState.selectedChannels = new Set(selectedIds);
+    }
 
     // Build fuzzy search index if available
     if (isFuzzySearchAvailable()) {
@@ -517,7 +551,8 @@ function performSearch() {
     timeFilter: appState.timeFilter,
     sortBy: appState.sortBy,
     useFuzzySearch: appState.useFuzzySearch,
-    fuzzyThreshold: appState.fuzzyThreshold
+    fuzzyThreshold: appState.fuzzyThreshold,
+    selectedChannels: appState.selectedChannels ? appState.selectedChannels.size : 'all'
   });
 
   hideError();
@@ -537,7 +572,8 @@ function performSearch() {
         filtered = applyFilters(appState.epgData.programs, {
           searchQuery: appState.searchQuery,
           searchScope: appState.searchScope,
-          timeFilter: appState.timeFilter
+          timeFilter: appState.timeFilter,
+          selectedChannels: appState.selectedChannels
         });
       } else {
         // Perform fuzzy search
@@ -546,11 +582,12 @@ function performSearch() {
           threshold: appState.fuzzyThreshold
         });
 
-        // Apply time filter to fuzzy results
+        // Apply time filter and channel filter to fuzzy results
         filtered = applyFilters(fuzzyResults, {
           searchQuery: '', // Already searched
           searchScope: appState.searchScope,
-          timeFilter: appState.timeFilter
+          timeFilter: appState.timeFilter,
+          selectedChannels: appState.selectedChannels
         });
 
         console.log(`Fuzzy search found ${fuzzyResults.length} matches, ${filtered.length} after time filter`);
@@ -562,7 +599,8 @@ function performSearch() {
       filtered = applyFilters(appState.epgData.programs, {
         searchQuery: appState.searchQuery,
         searchScope: appState.searchScope,
-        timeFilter: appState.timeFilter
+        timeFilter: appState.timeFilter,
+        selectedChannels: appState.selectedChannels
       });
     }
 
