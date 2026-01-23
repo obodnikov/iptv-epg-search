@@ -136,21 +136,21 @@ function setupEventListeners() {
 
 /**
  * Update channels list when EPG data is loaded
- * @param {Map} channelsMap - Map of channel ID to channel info
+ * @param {Array} channelsArray - Array of channel objects with id and name
  */
-export function updateChannels(channelsMap) {
-  if (!channelsMap || channelsMap.size === 0) {
+export function updateChannels(channelsArray) {
+  if (!channelsArray || channelsArray.length === 0) {
     state.channels = [];
     state.groupedChannels = {};
     updateButtonBadge();
     return;
   }
 
-  // Convert map to array
-  state.channels = Array.from(channelsMap.entries()).map(([id, info]) => ({
-    id,
-    name: info.name,
-    icon: info.icon
+  // Map channel array to internal format
+  state.channels = channelsArray.map(channel => ({
+    id: channel.id,
+    name: channel.name,
+    icon: channel.icon
   }));
 
   // Sort channels alphabetically by name
