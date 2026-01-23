@@ -57,22 +57,42 @@ export function filterByTime(programs, timeFilter) {
 }
 
 /**
+ * Filter programs by selected channels
+ * @param {Array} programs - Array of program objects
+ * @param {Set|null} selectedChannels - Set of selected channel IDs, or null for all
+ * @returns {Array} - Filtered programs
+ */
+export function filterByChannels(programs, selectedChannels) {
+  // If no selection or empty, return all programs
+  if (!selectedChannels || selectedChannels.size === 0) {
+    return programs;
+  }
+
+  return programs.filter(program => selectedChannels.has(program.channelId));
+}
+
+/**
  * Apply all filters and search
  * @param {Array} programs - Array of program objects
  * @param {Object} options - Filter options
  * @param {string} options.searchQuery - Search query
  * @param {string} options.searchScope - Search scope
  * @param {string} options.timeFilter - Time filter
+ * @param {Set|null} options.selectedChannels - Selected channel IDs
  * @returns {Array} - Filtered and searched programs
  */
 export function applyFilters(programs, options = {}) {
   const {
     searchQuery = '',
     searchScope = 'both',
-    timeFilter = 'all'
+    timeFilter = 'all',
+    selectedChannels = null
   } = options;
 
   let filtered = programs;
+
+  // Apply channel filter first (most selective)
+  filtered = filterByChannels(filtered, selectedChannels);
 
   // Apply time filter
   filtered = filterByTime(filtered, timeFilter);
