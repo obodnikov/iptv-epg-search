@@ -214,6 +214,36 @@
   color: white;
 }
 
+/* Results Toggle Button */
+.channel-results-toggle {
+  position: relative;
+}
+
+.channel-results-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.channel-results-toggle:disabled:hover {
+  background: transparent;
+  color: var(--sqowe-dark-purple);
+}
+
+.channel-results-toggle.active {
+  background: var(--sqowe-dark-purple);
+  color: white;
+  border-color: var(--sqowe-dark-purple);
+}
+
+.channel-results-toggle.active:hover {
+  background: var(--sqowe-light-purple);
+  border-color: var(--sqowe-light-purple);
+}
+
+#channelResultsCount {
+  font-weight: var(--font-bold);
+}
+
 /* Selection Count */
 .channel-selection-count {
   margin-left: auto;

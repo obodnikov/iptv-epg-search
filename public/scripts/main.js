@@ -28,7 +28,8 @@ import {
 import {
   initChannelFilter,
   updateChannels,
-  getSelectedChannelIds
+  getSelectedChannelIds,
+  updateChannelsInResults
 } from './components/channelFilter.js';
 
 // Expose performSearch globally for settings component
@@ -628,6 +629,9 @@ function performSearch() {
 
     // Store current results
     appState.currentResults = limited;
+
+    // Update channel filter with channels present in results
+    updateChannelsInResults(sorted);
 
     // Display results
     displayResults(limited, hasMore, sorted.length);

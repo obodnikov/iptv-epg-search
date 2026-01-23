@@ -42,7 +42,9 @@ let state = {
   groupedChannels: {},    // Channels grouped by category
   collapsedGroups: new Set(), // Collapsed group IDs
   filterText: '',         // Current filter text
-  isOpen: false           // Popup open state
+  isOpen: false,          // Popup open state
+  showOnlyInResults: false, // Toggle for showing only channels in results
+  channelsInResults: new Set() // Channel IDs present in current search results
 };
 
 // Callbacks
@@ -111,6 +113,10 @@ function setupEventListeners() {
       applyQuickFilter(filter);
     });
   });
+
+  // Show in Results toggle button
+  const showInResultsButton = document.getElementById('channelShowInResults');
+  showInResultsButton?.addEventListener('click', toggleShowOnlyInResults);
 
   // Click outside to close
   const popup = document.getElementById('channelFilterPopup');
@@ -268,6 +274,10 @@ function openPopup() {
   if (popup) {
     popup.style.display = 'flex';
     state.isOpen = true;
+
+    // Update "Show in Results" button state
+    updateShowInResultsButton();
+
     renderChannelList();
 
     // Focus filter input
@@ -285,6 +295,7 @@ function closePopup() {
     popup.style.display = 'none';
     state.isOpen = false;
     state.filterText = '';
+    state.showOnlyInResults = false;
 
     // Clear filter input
     const filterInput = document.getElementById('channelFilterInput');
@@ -394,6 +405,80 @@ function invertSelection() {
   state.selectedChannels = newSelection;
   renderChannelList();
   updateSelectionCount();
+}
+
+/**
+ * Toggle "Show only in results" filter
+ */
+function toggleShowOnlyInResults() {
+  // Only toggle if there are channels in results
+  if (state.channelsInResults.size === 0) return;
+
+  state.showOnlyInResults = !state.showOnlyInResults;
+  updateShowInResultsButton();
+  renderChannelList();
+}
+
+/**
+ * Update the "Show in Results" button state
+ */
+function updateShowInResultsButton() {
+  const button = document.getElementById('channelShowInResults');
+  const countSpan = document.getElementById('channelResultsCount');
+
+  if (!button) return;
+
+  const count = state.channelsInResults.size;
+
+  // Update count
+  if (countSpan) {
+    countSpan.textContent = `(${count})`;
+  }
+
+  // Enable/disable button
+  if (count > 0) {
+    button.disabled = false;
+    button.title = 'Show only channels present in search results';
+  } else {
+    button.disabled = true;
+    button.title = 'Run a search first';
+    state.showOnlyInResults = false;
+  }
+
+  // Update active state
+  if (state.showOnlyInResults) {
+    button.classList.add('active');
+  } else {
+    button.classList.remove('active');
+  }
+}
+
+/**
+ * Update channels present in current search results
+ * @param {Array} results - Array of search result programs
+ */
+export function updateChannelsInResults(results) {
+  state.channelsInResults.clear();
+
+  if (results && Array.isArray(results)) {
+    results.forEach(program => {
+      if (program.channelId) {
+        state.channelsInResults.add(program.channelId);
+      }
+    });
+  }
+
+  // Reset toggle if no results
+  if (state.channelsInResults.size === 0) {
+    state.showOnlyInResults = false;
+  }
+
+  updateShowInResultsButton();
+
+  // Re-render if popup is open
+  if (state.isOpen) {
+    renderChannelList();
+  }
 }
 
 /**
@@ -541,10 +626,18 @@ function renderChannelList() {
     const channels = state.groupedChannels[groupKey];
     if (!channels || channels.length === 0) return;
 
-    // Filter channels by search text
-    const filteredChannels = filterText
-      ? channels.filter(c => c.name.toLowerCase().includes(filterText))
-      : channels;
+    // Filter channels by search text and "show in results" toggle
+    let filteredChannels = channels;
+
+    // Apply text filter
+    if (filterText) {
+      filteredChannels = filteredChannels.filter(c => c.name.toLowerCase().includes(filterText));
+    }
+
+    // Apply "show only in results" filter
+    if (state.showOnlyInResults && state.channelsInResults.size > 0) {
+      filteredChannels = filteredChannels.filter(c => state.channelsInResults.has(c.id));
+    }
 
     if (filteredChannels.length === 0) return;
 
