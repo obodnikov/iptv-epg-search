@@ -122,11 +122,12 @@ iptv-web/
     │   │
     │   ├── components/            # UI components
     │   │   ├── results.js         # Results display, modal, view toggle
-    │   │   └── settings.js        # Settings panel, URL management
+    │   │   ├── settings.js        # Settings panel, URL management
+    │   │   └── channelFilter.js   # Channel filter popup, grouping, persistence
     │   │
     │   └── utils/                 # Utility modules
     │       ├── epgParser.js       # XML parsing, decompression, time utils
-    │       ├── search.js          # Search, filter, sort logic
+    │       ├── search.js          # Search, filter, sort logic (incl. channel filter)
     │       └── storage.js         # localStorage wrapper
     │
     └── styles/                    # CSS modules
@@ -136,6 +137,7 @@ iptv-web/
         └── components/            # Component-specific styles
             ├── button.css         # Button variants
             ├── card.css           # Card component
+            ├── channel-filter.css # Channel filter popup styles
             ├── form.css           # Form inputs, labels
             └── modal.css          # Modal dialog
 
@@ -170,6 +172,14 @@ iptv-web/
 - Modal dialog for program details
 - View toggle controls
 - State management (loading, error, no data, no results)
+
+**components/channelFilter.js**
+- Channel filter popup UI with grouping
+- Auto-categorizes channels (HD, News, Movies, Sports, Kids, General)
+- Quick filter buttons for category selection
+- "In Results" toggle to show channels in current results
+- Selection persistence via localStorage
+- Bulk actions (Select All, Clear All, Invert)
 
 **utils/epgParser.js**
 - Fetches EPG data (direct or via proxy)
@@ -280,12 +290,13 @@ User clicks "Load EPG Data"
 ### 5.3 Search and Filter Flow
 
 ```
-User enters search query OR selects filter
+User enters search query OR selects filter OR changes channel selection
     │
     ├─> Validate: min 2 chars OR time filter selected
     │
     ├─> applyFilters(programs, options)
     │       │
+    │       ├─> filterByChannels() → selected channels only
     │       ├─> filterByTime() → past/current/future
     │       └─> searchPrograms() → title/desc/channel match
     │
@@ -296,6 +307,8 @@ User enters search query OR selects filter
     ├─> Limit to 100 results (performance)
     │
     ├─> Store in window.appState.currentResults
+    │
+    ├─> updateChannelsInResults() → Track channels in results
     │
     └─> displayResults()
             │
@@ -308,13 +321,15 @@ User enters search query OR selects filter
 
 ```
 1. Browser localStorage (persistent)
-   └─> EPG URL, Last Updated timestamp
+   ├─> EPG URL, Last Updated timestamp
+   └─> Channel filter selection (iptv-channel-filter key)
 
 2. Application State (runtime)
    └─> window.appState
        ├─> epgData (parsed XML)
        ├─> currentResults (filtered programs)
        ├─> searchQuery, searchScope, timeFilter
+       ├─> selectedChannels (Set of channel IDs)
        └─> sortBy, maxResults
 
 3. Environment Detection (runtime)
@@ -383,9 +398,10 @@ User enters search query OR selects filter
 
 | Component | Path | Notes |
 |-----------|------|-------|
-| Main Bootstrap | `public/scripts/main.js` | May add features (pagination, channels) |
+| Main Bootstrap | `public/scripts/main.js` | May add features (pagination) |
 | Results Component | `public/scripts/components/results.js` | UI enhancements likely |
 | Settings Component | `public/scripts/components/settings.js` | May add more settings |
+| Channel Filter | `public/scripts/components/channelFilter.js` | New feature, may evolve |
 | Component Styles | `public/styles/components/*.css` | Design refinements expected |
 | HTML Structure | `public/index.html` | May add sections/features |
 
@@ -406,7 +422,6 @@ User enters search query OR selects filter
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | Pagination | Handle >100 results gracefully | Medium |
-| Channel Filtering | Filter by specific channels | Low |
 | Favorites | Save favorite programs | Low |
 | Export | Export search results | Low |
 | Dark Mode | Theme toggle | Low |
@@ -535,7 +550,7 @@ User says: "Add 500 lines of new features to main.js (currently 300 lines)"
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** January 2026  
-**Total Lines:** ~290
+**Document Version:** 1.1
+**Last Updated:** January 24, 2026
+**Total Lines:** ~300
 
