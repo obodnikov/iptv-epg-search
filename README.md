@@ -5,6 +5,11 @@ A simple web application for searching and browsing IPTV Electronic Program Guid
 ## Features
 
 - **Fuzzy Search**: Morphology-aware search with Russian/English stemming (handles word variations like "Убийство" → "Убийства")
+- **Channel Filter**: Filter results by channels with smart grouping and quick filters
+  - Auto-groups channels by category (HD, News, Movies, Sports, Kids, General)
+  - Quick filter buttons for one-click category selection
+  - "In Results" toggle to show only channels with matching programs
+  - Persists selection across sessions
 - **Program Ratings**: Rate programs with 5-star system, ratings boost search results
 - **EPG URL Management**: Store EPG URL locally in your browser
 - **Search Programs**: Search by program title, description, or channel name
@@ -78,6 +83,13 @@ The URL will be stored in your browser's localStorage.
   - Title Only
   - Description Only
   - Channel Name
+- **Channel Filter**: Click "Channels" button to filter by specific channels
+  - Channels are auto-grouped by category (HD, News, Movies, etc.)
+  - Use quick filter buttons to select entire categories
+  - Use "In Results" to show only channels with matching programs
+  - Select All / Clear All / Invert for bulk selection
+  - Search channels by name within the popup
+  - Selection persists across browser sessions
 - **Time Filter**: Select a filter to show:
   - All Programs
   - Past programs
@@ -118,7 +130,8 @@ iptv-web/
 │   │   └── search.js       # Search and filter logic
 │   └── components/
 │       ├── settings.js     # Settings UI component
-│       └── results.js      # Results display component
+│       ├── results.js      # Results display component
+│       └── channelFilter.js # Channel filter popup component
 └── README.md               # This file
 ```
 
