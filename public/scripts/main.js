@@ -17,8 +17,8 @@ import {
   initModal
 } from './components/results.js';
 import { fetchEpgData, parseEpgXml, analyzeEpgXml } from './utils/epgParser.js';
-import { getEpgUrl, saveLastUpdated } from './utils/storage.js';
-import { applyFilters, sortPrograms, applyRatingBoost, filterByChannels } from './utils/search.js';
+import { getEpgUrl, saveLastUpdated, getShowUniqueOnly, saveShowUniqueOnly, getPreferHD, savePreferHD } from './utils/storage.js';
+import { applyFilters, sortPrograms, applyRatingBoost, filterByChannels, filterUniqueByClosestTime, filterPreferHD } from './utils/search.js';
 import {
   initSearchIndex,
   fuzzySearch,
@@ -49,7 +49,9 @@ window.appState = {
   fuzzyThreshold: 0.4, // Fuzzy matching sensitivity (0 = exact, 1 = match anything)
   searchDebounceMs: 300, // Debounce delay for search input (configurable)
   manualSearchOnly: true, // Manual search only mode (default: true)
-  selectedChannels: null // Selected channel IDs for filtering (null = all channels)
+  selectedChannels: null, // Selected channel IDs for filtering (null = all channels)
+  showUniqueOnly: getShowUniqueOnly(), // Show only unique programs by title+channel (closest to current time)
+  preferHD: getPreferHD() // Prefer HD channels over SD/regular (deduplicates by title+time, keeps highest quality)
 };
 
 const appState = window.appState;
@@ -177,6 +179,40 @@ function initControls() {
     appState.sortBy = e.target.value;
     performSearch();
   });
+
+  // Show unique only checkbox
+  const showUniqueCheckbox = document.getElementById('showUniqueCheckbox');
+  if (showUniqueCheckbox) {
+    // Initialize checkbox state from appState (loaded from localStorage)
+    showUniqueCheckbox.checked = appState.showUniqueOnly;
+
+    // Handle checkbox change
+    showUniqueCheckbox.addEventListener('change', (e) => {
+      appState.showUniqueOnly = e.target.checked;
+      saveShowUniqueOnly(e.target.checked);
+      // Re-run search if we have results
+      if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+        performSearch();
+      }
+    });
+  }
+
+  // Prefer HD checkbox
+  const preferHDCheckbox = document.getElementById('preferHDCheckbox');
+  if (preferHDCheckbox) {
+    // Initialize checkbox state from appState (loaded from localStorage)
+    preferHDCheckbox.checked = appState.preferHD;
+
+    // Handle checkbox change
+    preferHDCheckbox.addEventListener('change', (e) => {
+      appState.preferHD = e.target.checked;
+      savePreferHD(e.target.checked);
+      // Re-run search if we have results
+      if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+        performSearch();
+      }
+    });
+  }
 
   // Initialize Best Match option state
   updateBestMatchOption();
@@ -603,6 +639,18 @@ function performSearch() {
         timeFilter: appState.timeFilter,
         selectedChannels: appState.selectedChannels
       });
+    }
+
+    // Apply unique filter if enabled (filter duplicates by title+channel, keep closest to current time)
+    if (appState.showUniqueOnly) {
+      filtered = filterUniqueByClosestTime(filtered);
+      console.log(`After unique filter: ${filtered.length} unique programs`);
+    }
+
+    // Apply prefer HD filter if enabled (filter duplicates by title+time, keep highest quality)
+    if (appState.preferHD) {
+      filtered = filterPreferHD(filtered);
+      console.log(`After prefer HD filter: ${filtered.length} programs (HD preferred)`);
     }
 
     // Apply rating boost (for fuzzy results with scores)
