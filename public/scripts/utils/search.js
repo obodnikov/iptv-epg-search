@@ -72,6 +72,43 @@ export function filterByChannels(programs, selectedChannels) {
 }
 
 /**
+ * Filter programs to show only unique ones (by title + channel), keeping the one closest to current time
+ * @param {Array} programs - Array of program objects
+ * @returns {Array} - Filtered programs with only unique title+channel combinations
+ */
+export function filterUniqueByClosestTime(programs) {
+  const now = new Date();
+  const grouped = new Map();
+
+  programs.forEach(program => {
+    // Validate program.start is a valid Date
+    if (!program.start || !(program.start instanceof Date) || isNaN(program.start.getTime())) {
+      console.warn('Skipping program with invalid start time:', program.title, program.channelName);
+      return; // Skip invalid programs
+    }
+
+    // Validate required fields for key generation
+    if (!program.title || !program.channelName) {
+      console.warn('Skipping program with missing title or channelName:', program);
+      return;
+    }
+
+    const key = `${program.title}|${program.channelName}`;
+    const timeDiff = Math.abs(program.start - now);
+
+    // For ties in timeDiff, prefer earlier start time (deterministic)
+    const existing = grouped.get(key);
+    if (!existing ||
+        timeDiff < existing.timeDiff ||
+        (timeDiff === existing.timeDiff && program.start < existing.program.start)) {
+      grouped.set(key, { program, timeDiff });
+    }
+  });
+
+  return Array.from(grouped.values()).map(item => item.program);
+}
+
+/**
  * Apply all filters and search
  * @param {Array} programs - Array of program objects
  * @param {Object} options - Filter options

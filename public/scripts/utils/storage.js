@@ -8,7 +8,8 @@ const STORAGE_KEYS = {
   LAST_UPDATED: 'iptv_epg_last_updated',
   MANUAL_SEARCH: 'iptv_manual_search_only',
   FUZZY_SEARCH_ENABLED: 'iptv_fuzzy_search_enabled',
-  FUZZY_THRESHOLD: 'iptv_fuzzy_threshold'
+  FUZZY_THRESHOLD: 'iptv_fuzzy_threshold',
+  SHOW_UNIQUE_ONLY: 'iptv_show_unique_only'
 };
 
 /**
@@ -183,5 +184,35 @@ export function getFuzzyThreshold() {
   } catch (error) {
     console.error('Error retrieving fuzzy threshold:', error);
     return 0.4; // Default to medium on error
+  }
+}
+
+/**
+ * Save show unique only preference
+ * @param {boolean} enabled - Whether to show only unique programs (closest to current time)
+ * @returns {boolean} - Success status
+ */
+export function saveShowUniqueOnly(enabled) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SHOW_UNIQUE_ONLY, enabled.toString());
+    return true;
+  } catch (error) {
+    console.error('Error saving show unique only preference:', error);
+    return false;
+  }
+}
+
+/**
+ * Get show unique only preference
+ * @returns {boolean} - Whether to show only unique programs (default: false)
+ */
+export function getShowUniqueOnly() {
+  try {
+    const value = localStorage.getItem(STORAGE_KEYS.SHOW_UNIQUE_ONLY);
+    // Default to false (show all) if not set
+    return value === null ? false : value === 'true';
+  } catch (error) {
+    console.error('Error retrieving show unique only preference:', error);
+    return false; // Default to show all on error
   }
 }
