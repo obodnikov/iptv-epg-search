@@ -72,6 +72,25 @@ export function filterByChannels(programs, selectedChannels) {
 }
 
 /**
+ * Get channel quality score
+ * Higher score = better quality
+ * @param {string} channelName - Channel name to evaluate
+ * @returns {number} - Quality score (0=SD, 1=Regular, 2=HD, 3=UHD, 4=4K)
+ */
+function getChannelQuality(channelName) {
+  if (!channelName) return 1;
+
+  const name = channelName.toUpperCase();
+
+  if (name.includes('4K')) return 4;
+  if (name.includes('UHD')) return 3;
+  if (name.includes('HD')) return 2;
+  if (name.includes('SD')) return 0;
+
+  return 1; // Regular/standard quality
+}
+
+/**
  * Filter programs to show only unique ones (by title + channel), keeping the one closest to current time
  * @param {Array} programs - Array of program objects
  * @returns {Array} - Filtered programs with only unique title+channel combinations
@@ -102,6 +121,46 @@ export function filterUniqueByClosestTime(programs) {
         timeDiff < existing.timeDiff ||
         (timeDiff === existing.timeDiff && program.start < existing.program.start)) {
       grouped.set(key, { program, timeDiff });
+    }
+  });
+
+  return Array.from(grouped.values()).map(item => item.program);
+}
+
+/**
+ * Filter programs to prefer HD channels over SD/regular
+ * Groups by title + start time, keeps highest quality channel
+ * @param {Array} programs - Array of program objects
+ * @returns {Array} - Filtered programs with HD preferred
+ */
+export function filterPreferHD(programs) {
+  const grouped = new Map();
+
+  programs.forEach(program => {
+    // Validate program.start is a valid Date
+    if (!program.start || !(program.start instanceof Date) || isNaN(program.start.getTime())) {
+      console.warn('Skipping program with invalid start time:', program.title, program.channelName);
+      return;
+    }
+
+    // Validate required fields
+    if (!program.title || !program.channelName) {
+      console.warn('Skipping program with missing title or channelName:', program);
+      return;
+    }
+
+    // Group by title + start time (ignore channel name)
+    const key = `${program.title}|${program.start.getTime()}`;
+    const quality = getChannelQuality(program.channelName);
+
+    const existing = grouped.get(key);
+
+    if (!existing || quality > existing.quality) {
+      // Keep this program if no existing or higher quality
+      grouped.set(key, { program, quality });
+    } else if (quality === existing.quality && program.channelName < existing.program.channelName) {
+      // If same quality, prefer alphabetically first channel (deterministic)
+      grouped.set(key, { program, quality });
     }
   });
 

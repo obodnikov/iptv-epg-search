@@ -9,7 +9,8 @@ const STORAGE_KEYS = {
   MANUAL_SEARCH: 'iptv_manual_search_only',
   FUZZY_SEARCH_ENABLED: 'iptv_fuzzy_search_enabled',
   FUZZY_THRESHOLD: 'iptv_fuzzy_threshold',
-  SHOW_UNIQUE_ONLY: 'iptv_show_unique_only'
+  SHOW_UNIQUE_ONLY: 'iptv_show_unique_only',
+  PREFER_HD: 'iptv_prefer_hd'
 };
 
 /**
@@ -213,6 +214,36 @@ export function getShowUniqueOnly() {
     return value === null ? false : value === 'true';
   } catch (error) {
     console.error('Error retrieving show unique only preference:', error);
+    return false; // Default to show all on error
+  }
+}
+
+/**
+ * Save prefer HD channels preference
+ * @param {boolean} enabled - Whether to prefer HD channels over SD/regular
+ * @returns {boolean} - Success status
+ */
+export function savePreferHD(enabled) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PREFER_HD, enabled.toString());
+    return true;
+  } catch (error) {
+    console.error('Error saving prefer HD preference:', error);
+    return false;
+  }
+}
+
+/**
+ * Get prefer HD channels preference
+ * @returns {boolean} - Whether to prefer HD channels (default: false)
+ */
+export function getPreferHD() {
+  try {
+    const value = localStorage.getItem(STORAGE_KEYS.PREFER_HD);
+    // Default to false (show all qualities) if not set
+    return value === null ? false : value === 'true';
+  } catch (error) {
+    console.error('Error retrieving prefer HD preference:', error);
     return false; // Default to show all on error
   }
 }
