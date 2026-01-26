@@ -1,0 +1,161 @@
+/* results.css - Results Section Styles */
+
+/* ========================================
+   Results Header
+   ======================================== */
+
+.results-header {
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-xl);
+}
+
+.results-header-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.results-title {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-bold);
+  color: var(--sqowe-dark-purple);
+  margin: 0;
+}
+
+.results-count {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-medium);
+  color: var(--sqowe-light-grey);
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* ========================================
+   Results Controls
+   ======================================== */
+
+.results-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.results-control-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.results-filters {
+  flex-wrap: wrap;
+}
+
+.results-control-item {
+  display: flex;
+  align-items: center;
+}
+
+/* Compact form select for results controls */
+.form-select-compact {
+  padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+  font-size: var(--font-size-small);
+  min-width: 180px;
+}
+
+/* ========================================
+   Checkbox in Results Controls
+   ======================================== */
+
+.results-control-item .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+}
+
+.results-control-item .checkbox-label:hover {
+  background-color: rgba(142, 136, 163, 0.05);
+}
+
+.results-control-item .checkbox-text {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+/* ========================================
+   Responsive Design
+   ======================================== */
+
+@media (max-width: 768px) {
+  .results-header {
+    padding: var(--space-md);
+  }
+
+  .results-header-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .results-count {
+    font-size: var(--font-size-small);
+  }
+
+  .results-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-md);
+  }
+
+  .results-control-group {
+    justify-content: space-between;
+  }
+
+  .results-filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .results-control-item {
+    width: 100%;
+  }
+
+  .form-select-compact {
+    width: 100%;
+  }
+
+  .results-control-item .checkbox-label {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .results-title {
+    font-size: var(--font-size-h4);
+  }
+
+  .view-toggle {
+    width: 100%;
+  }
+
+  .view-toggle button {
+    flex: 1;
+  }
+}

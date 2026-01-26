@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="styles/components/modal.css">
   <link rel="stylesheet" href="styles/components/rating.css">
   <link rel="stylesheet" href="styles/components/channel-filter.css">
+  <link rel="stylesheet" href="styles/components/results.css">
 </head>
 <body>
 
@@ -231,35 +232,53 @@
 
       <!-- Results Section -->
       <section id="resultsSection" style="display: none;">
-        <div class="flex-between mb-lg">
-          <h2 class="h3">Search Results</h2>
-          <div class="flex gap-md" style="align-items: center;">
-            <div class="view-toggle">
-              <button type="button" class="btn btn-small" id="gridViewBtn" data-active="true" aria-label="Grid view">
-                Grid
-              </button>
-              <button type="button" class="btn btn-small btn-secondary" id="listViewBtn" aria-label="List view">
-                List
-              </button>
+        <!-- Results Header -->
+        <div class="results-header">
+          <div class="results-header-top">
+            <h2 class="results-title">Search Results</h2>
+            <p id="resultsCount" class="results-count"></p>
+          </div>
+
+          <!-- Results Controls -->
+          <div class="results-controls">
+            <!-- View Toggle Group -->
+            <div class="results-control-group">
+              <div class="view-toggle">
+                <button type="button" class="btn btn-small" id="gridViewBtn" data-active="true" aria-label="Grid view">
+                  Grid
+                </button>
+                <button type="button" class="btn btn-small btn-secondary" id="listViewBtn" aria-label="List view">
+                  List
+                </button>
+              </div>
             </div>
-            <div style="min-width: 180px;">
-              <select id="sortSelect" class="form-select" style="padding: 0.5rem 2.5rem 0.5rem 0.75rem; font-size: 0.875rem;">
-                <option value="best-match" disabled>Best Match</option>
-                <option value="time-asc">Time (Earliest First)</option>
-                <option value="time-desc">Time (Latest First)</option>
-                <option value="channel-asc">Channel (A-Z)</option>
-                <option value="title-asc">Title (A-Z)</option>
-              </select>
+
+            <!-- Filter Controls Group -->
+            <div class="results-control-group results-filters">
+              <div class="results-control-item">
+                <select id="sortSelect" class="form-select form-select-compact">
+                  <option value="best-match" disabled>Best Match</option>
+                  <option value="time-asc">Time (Earliest First)</option>
+                  <option value="time-desc">Time (Latest First)</option>
+                  <option value="channel-asc">Channel (A-Z)</option>
+                  <option value="title-asc">Title (A-Z)</option>
+                </select>
+              </div>
+
+              <div class="results-control-item">
+                <button type="button" class="channel-filter-btn" id="channelFilterBtn" aria-label="Filter channels">
+                  Channels
+                  <span class="channel-filter-badge" id="channelFilterBadge" style="display: none;"></span>
+                </button>
+              </div>
+
+              <div class="results-control-item">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="showUniqueCheckbox" class="checkbox-input">
+                  <span class="checkbox-text">Show Once</span>
+                </label>
+              </div>
             </div>
-            <button type="button" class="channel-filter-btn" id="channelFilterBtn" aria-label="Filter channels">
-              Channels
-              <span class="channel-filter-badge" id="channelFilterBadge" style="display: none;"></span>
-            </button>
-            <label class="checkbox-label" style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer; user-select: none;">
-              <input type="checkbox" id="showUniqueCheckbox" class="checkbox-input" style="cursor: pointer;">
-              <span class="text-small">Show Once</span>
-            </label>
-            <p id="resultsCount" class="text-small text-light"></p>
           </div>
         </div>
 
