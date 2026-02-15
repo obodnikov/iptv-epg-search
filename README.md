@@ -10,6 +10,12 @@ A simple web application for searching and browsing IPTV Electronic Program Guid
   - Quick filter buttons for one-click category selection
   - "In Results" toggle to show only channels with matching programs
   - Persists selection across sessions
+- **Explore Mode**: Curated home screen after EPG loads — browse without searching
+  - Genre chips (Movies, Sports, News, etc.) auto-detected from EPG data
+  - Popular shows chips — frequently airing programs shown as quick filters
+  - Category-based sections: programs grouped by genre and time (On Now / Coming Up)
+  - Recent searches persisted across sessions
+  - "Back to Explore" button to return from search results
 - **Program Ratings**: Rate programs with 5-star system, ratings boost search results
 - **EPG URL Management**: Store EPG URL locally in your browser
 - **Search Programs**: Search by program title, description, or channel name
@@ -70,9 +76,16 @@ The URL will be stored in your browser's localStorage.
 
 1. Click the "Load EPG Data" button
 2. Wait for the data to be fetched, decompressed, and parsed
-3. Once loaded, you can start searching
+3. Once loaded, the **Explore** view appears with curated content
 
-### 4. Search and Filter
+### 4. Explore and Search
+
+- **Explore**: Browse programs without searching
+  - Click genre chips (e.g. "Детектив", "Sport") to search that genre
+  - Click popular show chips to search for a specific title
+  - Scroll category sections to see what's on now and coming up
+  - Click "Back to Explore" to return from search results
+- **Search**: Type in the search box to find programs
 
 - **Search**: Type in the search box to find programs
   - Fuzzy search is enabled by default (handles typos and word variations)
@@ -121,16 +134,20 @@ iptv-web/
 │   └── components/
 │       ├── button.css      # Button styles
 │       ├── card.css        # Card component styles
+│       ├── explore.css     # Explore mode styles
 │       └── form.css        # Form and input styles
 ├── scripts/
 │   ├── main.js             # Application bootstrap
 │   ├── utils/
 │   │   ├── storage.js      # localStorage management
 │   │   ├── epgParser.js    # XML parsing and decompression
+│   │   ├── keywords.js     # Genre + popular chip generation
+│   │   ├── recentSearches.js # Recent searches localStorage CRUD
 │   │   └── search.js       # Search and filter logic
 │   └── components/
 │       ├── settings.js     # Settings UI component
 │       ├── results.js      # Results display component
+│       ├── explore.js      # Explore mode component
 │       └── channelFilter.js # Channel filter popup component
 └── README.md               # This file
 ```
