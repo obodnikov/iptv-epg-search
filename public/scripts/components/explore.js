@@ -7,7 +7,7 @@ import { filterByChannels, filterUniqueByClosestTime, filterPreferHD } from '../
 import { getProgramStatus, formatTimeRange } from '../utils/epgParser.js';
 import { showProgramModal, escapeHtml } from './results.js';
 import { getGroupedChannels } from './channelFilter.js';
-import { generateKeywords } from '../utils/keywords.js';
+import { generateGenreChips, generatePopularChips } from '../utils/keywords.js';
 import { getRecentSearches, removeRecentSearch, clearRecentSearches } from '../utils/recentSearches.js';
 
 // Category display configuration
@@ -245,23 +245,29 @@ function renderExplore() {
 }
 
 /**
- * Render keyword chips section
+ * Render keyword chips section (two-tier: genre + popular)
  * @param {Array} programs - Filtered programs to analyze
- * @returns {string|null} HTML string or null if no keywords
+ * @returns {string|null} HTML string or null if no chips
  */
 function renderKeywordChips(programs) {
-  const keywords = generateKeywords(programs);
-  if (keywords.length === 0) return null;
+  const genres = generateGenreChips(programs);
+  const popular = generatePopularChips(programs);
 
-  const chipsHtml = keywords.map(kw =>
-    `<button class="explore-chip explore-chip--keyword" data-keyword="${escapeHtml(kw.text)}" title="${kw.count} programs">${escapeHtml(kw.text)}</button>`
+  if (genres.length === 0 && popular.length === 0) return null;
+
+  const genreHtml = genres.map(kw =>
+    `<button class="explore-chip explore-chip--genre" data-keyword="${escapeHtml(kw.text)}" title="${kw.count} programs">${escapeHtml(kw.text)}</button>`
+  ).join('');
+
+  const popularHtml = popular.map(kw =>
+    `<button class="explore-chip explore-chip--keyword" data-keyword="${escapeHtml(kw.text)}" title="${kw.count} airings">${escapeHtml(kw.text)}</button>`
   ).join('');
 
   return `
     <div class="explore-chips-section" id="exploreKeywordChips">
       <span class="explore-chips-label">Discover</span>
       <div class="explore-chips-row">
-        ${chipsHtml}
+        ${genreHtml}${popularHtml}
       </div>
     </div>
   `;
@@ -424,8 +430,8 @@ function parseProgram(encodedString) {
  */
 function attachCardListeners(container) {
   container.addEventListener('click', (e) => {
-    // Handle keyword chip clicks
-    const chip = e.target.closest('.explore-chip--keyword');
+    // Handle keyword/genre chip clicks
+    const chip = e.target.closest('.explore-chip--keyword, .explore-chip--genre');
     if (chip) {
       const keyword = chip.getAttribute('data-keyword');
       if (keyword && callbacks.onKeywordClick) {

@@ -88,7 +88,21 @@
   flex-shrink: 0;
 }
 
-/* Keyword Chip Variant */
+/* Genre Chip Variant (Tier 1 — accent/filled) */
+.explore-chip--genre {
+  background: var(--sqowe-dark-purple);
+  color: #fff;
+  border-color: var(--sqowe-dark-purple);
+}
+
+.explore-chip--genre:hover {
+  background: var(--sqowe-light-purple);
+  border-color: var(--sqowe-light-purple);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Popular Chip Variant (Tier 2 — outlined) */
 .explore-chip--keyword {
   background: rgba(142, 136, 163, 0.1);
   color: var(--sqowe-dark-purple);
