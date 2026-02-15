@@ -31,6 +31,14 @@ import {
   getSelectedChannelIds,
   updateChannelsInResults
 } from './components/channelFilter.js';
+import {
+  initExplore,
+  showExplore,
+  hideExplore,
+  refreshExplore,
+  isExploreVisible
+} from './components/explore.js';
+import { addRecentSearch } from './utils/recentSearches.js';
 
 // Expose performSearch globally for settings component
 window.performSearch = null; // Will be set after function definition
@@ -79,6 +87,12 @@ function init() {
   // Initialize channel filter
   initChannelFilter({
     onSelectionChange: handleChannelSelectionChange
+  });
+
+  // Initialize explore view
+  initExplore({
+    onKeywordClick: handleKeywordClick,
+    onRecentSearchClick: handleRecentSearchClick
   });
 
   // Check if EPG URL is configured
@@ -132,9 +146,12 @@ function initControls() {
     appState.searchQuery = '';
     toggleClearButton('');
     updateBestMatchOption();
-    // In auto-search mode, trigger search to show all/filtered results
-    // In manual mode, user must click Search button or press Enter
-    if (!appState.manualSearchOnly) {
+    // Return to Explore view if EPG data is loaded
+    if (appState.epgData) {
+      hideResults();
+      hideError();
+      showExplore();
+    } else if (!appState.manualSearchOnly) {
       performSearch();
     }
   });
@@ -190,8 +207,10 @@ function initControls() {
     showUniqueCheckbox.addEventListener('change', (e) => {
       appState.showUniqueOnly = e.target.checked;
       saveShowUniqueOnly(e.target.checked);
-      // Re-run search if we have results
-      if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+      // Refresh Explore if visible, otherwise re-run search
+      if (isExploreVisible()) {
+        refreshExplore();
+      } else if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
         performSearch();
       }
     });
@@ -207,8 +226,10 @@ function initControls() {
     preferHDCheckbox.addEventListener('change', (e) => {
       appState.preferHD = e.target.checked;
       savePreferHD(e.target.checked);
-      // Re-run search if we have results
-      if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+      // Refresh Explore if visible, otherwise re-run search
+      if (isExploreVisible()) {
+        refreshExplore();
+      } else if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
         performSearch();
       }
     });
@@ -353,8 +374,10 @@ function handleChannelSelectionChange(selectedChannelIds) {
   console.log('Channel selection changed:', selectedChannelIds.length, 'channels selected');
   appState.selectedChannels = new Set(selectedChannelIds);
 
-  // Re-run search if we have results
-  if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
+  // Refresh Explore if visible, otherwise re-run search
+  if (isExploreVisible()) {
+    refreshExplore();
+  } else if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
     performSearch();
   }
 }
@@ -376,29 +399,18 @@ function showDataLoadedMessage(totalPrograms, totalChannels) {
   errorState.style.display = 'none';
   loadingState.style.display = 'none';
 
-  // Create or update info card
-  let infoCard = document.getElementById('dataLoadedInfo');
-  if (!infoCard) {
-    infoCard = document.createElement('div');
-    infoCard.id = 'dataLoadedInfo';
-    infoCard.className = 'card';
-    const container = document.querySelector('.container');
-    const filterControls = document.querySelector('.filter-controls');
-    filterControls.insertAdjacentElement('afterend', infoCard);
-  }
+  // Remove old info card if it exists
+  const oldInfoCard = document.getElementById('dataLoadedInfo');
+  if (oldInfoCard) oldInfoCard.remove();
 
-  infoCard.innerHTML = `
-    <div class="card-body" style="text-align: left;">
-      <h3 class="card-title">EPG Data Loaded Successfully</h3>
-      <p class="card-description mb-lg">
-        Loaded <strong>${totalPrograms.toLocaleString()}</strong> programs from <strong>${totalChannels}</strong> channels.
-      </p>
-      <p class="card-description">
-        Use the search box and filters above to find programs. Enter at least 2 characters or select a time filter.
-      </p>
-    </div>
-  `;
-  infoCard.style.display = 'block';
+  // Show shared filter bar
+  const sharedFilterBar = document.getElementById('sharedFilterBar');
+  if (sharedFilterBar) sharedFilterBar.style.display = 'flex';
+
+  // Show Explore view
+  showExplore();
+
+  console.log(`EPG loaded: ${totalPrograms.toLocaleString()} programs, ${totalChannels} channels`);
 }
 
 /**
@@ -419,6 +431,7 @@ async function loadEpgData() {
   hideError();
   hideNoData();
   hideResults();
+  hideExplore();
 
   try {
     // Fetch and decompress
@@ -579,6 +592,9 @@ function performSearch() {
     return;
   }
 
+  // Hide Explore view when searching
+  hideExplore();
+
   // Show searching indicator
   showSearching();
 
@@ -684,6 +700,11 @@ function performSearch() {
     // Display results
     displayResults(limited, hasMore, sorted.length);
 
+    // Save to recent searches
+    if (query.length >= 2) {
+      addRecentSearch(query);
+    }
+
     console.log(`Found ${sorted.length} results, displaying ${limited.length}`);
 
     // Hide searching indicator
@@ -693,6 +714,30 @@ function performSearch() {
 
 // Expose performSearch globally for settings component
 window.performSearch = performSearch;
+
+/**
+ * Handle keyword chip click from Explore view
+ * @param {string} keyword - Keyword to search
+ */
+function handleKeywordClick(keyword) {
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) searchInput.value = keyword;
+  appState.searchQuery = keyword;
+  toggleClearButton(keyword);
+  performSearch();
+}
+
+/**
+ * Handle recent search chip click from Explore view
+ * @param {string} query - Search query to re-run
+ */
+function handleRecentSearchClick(query) {
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) searchInput.value = query;
+  appState.searchQuery = query;
+  toggleClearButton(query);
+  performSearch();
+}
 
 /**
  * Handle errors globally

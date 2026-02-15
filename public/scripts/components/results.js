@@ -239,7 +239,7 @@ function createProgramListItem(program) {
  * Show program details modal
  * @param {Object} program - Program object
  */
-function showProgramModal(program) {
+export function showProgramModal(program) {
   const modal = document.getElementById('programModal');
   const modalTitle = document.getElementById('modalTitle');
   const modalBody = document.getElementById('modalBody');
@@ -428,7 +428,7 @@ export function hideNoData() {
  * @param {string} text - Text to escape
  * @returns {string} - Escaped text
  */
-function escapeHtml(text) {
+export function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;

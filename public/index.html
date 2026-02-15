@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="styles/components/rating.css">
   <link rel="stylesheet" href="styles/components/channel-filter.css">
   <link rel="stylesheet" href="styles/components/results.css">
+  <link rel="stylesheet" href="styles/components/explore.css">
 </head>
 <body>
 
@@ -203,6 +204,33 @@
         </div>
       </section>
 
+      <!-- Shared Filter Bar (visible when EPG loaded, works in Explore and Search modes) -->
+      <div id="sharedFilterBar" class="shared-filter-bar mb-xl" style="display: none;">
+        <div class="results-control-item">
+          <button type="button" class="channel-filter-btn" id="channelFilterBtn" aria-label="Filter channels">
+            Channels
+            <span class="channel-filter-badge" id="channelFilterBadge" style="display: none;"></span>
+          </button>
+        </div>
+        <div class="results-control-item">
+          <label class="checkbox-label">
+            <input type="checkbox" id="showUniqueCheckbox" class="checkbox-input">
+            <span class="checkbox-text">Show Once</span>
+          </label>
+        </div>
+        <div class="results-control-item">
+          <label class="checkbox-label">
+            <input type="checkbox" id="preferHDCheckbox" class="checkbox-input">
+            <span class="checkbox-text">Prefer HD</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Explore Section (default view after EPG loads) -->
+      <section id="exploreSection" class="explore-section" style="display: none;">
+        <!-- Content rendered dynamically by explore.js -->
+      </section>
+
       <!-- Loading State -->
       <div id="loadingState" class="card text-center" style="display: none;">
         <div class="card-body">
@@ -239,9 +267,8 @@
             <p id="resultsCount" class="results-count"></p>
           </div>
 
-          <!-- Results Controls -->
+          <!-- Results Controls (sort + view toggle only; filters are in shared bar) -->
           <div class="results-controls">
-            <!-- View Toggle Group -->
             <div class="results-control-group">
               <div class="view-toggle">
                 <button type="button" class="btn btn-small" id="gridViewBtn" data-active="true" aria-label="Grid view">
@@ -253,8 +280,7 @@
               </div>
             </div>
 
-            <!-- Filter Controls Group -->
-            <div class="results-control-group results-filters">
+            <div class="results-control-group">
               <div class="results-control-item">
                 <select id="sortSelect" class="form-select form-select-compact">
                   <option value="best-match" disabled>Best Match</option>
@@ -263,27 +289,6 @@
                   <option value="channel-asc">Channel (A-Z)</option>
                   <option value="title-asc">Title (A-Z)</option>
                 </select>
-              </div>
-
-              <div class="results-control-item">
-                <button type="button" class="channel-filter-btn" id="channelFilterBtn" aria-label="Filter channels">
-                  Channels
-                  <span class="channel-filter-badge" id="channelFilterBadge" style="display: none;"></span>
-                </button>
-              </div>
-
-              <div class="results-control-item">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="showUniqueCheckbox" class="checkbox-input">
-                  <span class="checkbox-text">Show Once</span>
-                </label>
-              </div>
-
-              <div class="results-control-item">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="preferHDCheckbox" class="checkbox-input">
-                  <span class="checkbox-text">Prefer HD</span>
-                </label>
               </div>
             </div>
           </div>

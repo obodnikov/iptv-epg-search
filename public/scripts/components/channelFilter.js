@@ -748,6 +748,14 @@ export function isChannelSelected(channelId) {
 }
 
 /**
+ * Get grouped channels by category
+ * @returns {Object} - Channels grouped by category key
+ */
+export function getGroupedChannels() {
+  return state.groupedChannels;
+}
+
+/**
  * Save state to localStorage
  */
 function saveState() {
