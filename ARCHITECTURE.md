@@ -47,36 +47,38 @@
 **Architecture Pattern:**
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Browser                               │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │  public/index.html (Single Page)                       │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  │ │
-│  │  │   Settings   │  │   Search     │  │   Results   │  │ │
-│  │  │  Component   │  │   Controls   │  │  Component  │  │ │
-│  │  └──────┬───────┘  └──────┬───────┘  └──────┬──────┘  │ │
-│  │         │                  │                  │         │ │
-│  │         └──────────────────┴──────────────────┘         │ │
-│  │                            │                             │ │
-│  │                    ┌───────▼────────┐                   │ │
-│  │                    │  main.js       │                   │ │
-│  │                    │  (Bootstrap)   │                   │ │
-│  │                    └───────┬────────┘                   │ │
-│  │                            │                             │ │
-│  │         ┌──────────────────┼──────────────────┐         │ │
-│  │         │                  │                  │         │ │
-│  │    ┌────▼─────┐     ┌─────▼──────┐    ┌─────▼─────┐   │ │
-│  │    │ storage  │     │ epgParser  │    │  search   │   │ │
-│  │    │  .js     │     │    .js     │    │   .js     │   │ │
-│  │    └──────────┘     └─────┬──────┘    └───────────┘   │ │
-│  │                            │                             │ │
-│  └────────────────────────────┼─────────────────────────────┘ │
-│                               │                               │
-│                    ┌──────────▼──────────┐                   │
-│                    │   Pako.js (CDN)     │                   │
-│                    │  Gzip Decompression │                   │
-│                    └─────────────────────┘                   │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        Browser                                │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │  public/index.html (Single Page)                        │ │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │ │
+│  │  │ Settings │ │  Search  │ │ Explore  │ │  Results  │  │ │
+│  │  │Component │ │ Controls │ │   View   │ │ Component │  │ │
+│  │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬─────┘  │ │
+│  │       └─────────────┴────────────┴─────────────┘        │ │
+│  │                          │                               │ │
+│  │  ┌───────────────────────┤ Shared Filter Bar            │ │
+│  │  │  (Channels, Show Once, Prefer HD)                    │ │
+│  │  └───────────────────────┤                               │ │
+│  │                   ┌──────▼───────┐                       │ │
+│  │                   │   main.js    │                       │ │
+│  │                   │ (Bootstrap)  │                       │ │
+│  │                   └──────┬───────┘                       │ │
+│  │       ┌──────────────────┼──────────────────┐           │ │
+│  │  ┌────▼─────┐     ┌─────▼──────┐    ┌─────▼─────┐     │ │
+│  │  │ storage  │     │ epgParser  │    │  search   │     │ │
+│  │  │  .js     │     │    .js     │    │   .js     │     │ │
+│  │  └──────────┘     └────────────┘    └───────────┘     │ │
+│  │  ┌────────────┐   ┌────────────┐                       │ │
+│  │  │ keywords.js│   │recentSearch│  (Explore utilities)  │ │
+│  │  └────────────┘   │   es.js   │                       │ │
+│  │                    └────────────┘                       │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                              │                                │
+│                   ┌──────────▼──────────┐                    │
+│                   │  Pako.js / Fuse.js  │  (vendor libs)     │
+│                   └─────────────────────┘                    │
+└──────────────────────────────────────────────────────────────┘
                                │
                     ┌──────────▼──────────┐
                     │  Vercel Platform    │
@@ -118,16 +120,22 @@ iptv-web/
     ├── index.html                 # Single-page application entry
     │
     ├── scripts/                   # JavaScript modules
-    │   ├── main.js                # Application bootstrap
+    │   ├── main.js                # Application bootstrap, view-swap orchestration
     │   │
     │   ├── components/            # UI components
+    │   │   ├── explore.js         # Explore view (keyword chips, categories, recent searches)
     │   │   ├── results.js         # Results display, modal, view toggle
     │   │   ├── settings.js        # Settings panel, URL management
-    │   │   └── channelFilter.js   # Channel filter popup, grouping, persistence
+    │   │   ├── channelFilter.js   # Channel filter popup, grouping, persistence
+    │   │   └── ratingControl.js   # Star rating UI component
     │   │
     │   └── utils/                 # Utility modules
     │       ├── epgParser.js       # XML parsing, decompression, time utils
     │       ├── search.js          # Search, filter, sort logic (incl. channel filter)
+    │       ├── fuzzySearch.js     # Fuse.js index building, stemming
+    │       ├── keywords.js        # Keyword chip generation from EPG titles
+    │       ├── ratings.js         # Rating persistence (localStorage)
+    │       ├── recentSearches.js  # Recent search query persistence
     │       └── storage.js         # localStorage wrapper
     │
     └── styles/                    # CSS modules
@@ -138,8 +146,11 @@ iptv-web/
             ├── button.css         # Button variants
             ├── card.css           # Card component
             ├── channel-filter.css # Channel filter popup styles
+            ├── explore.css        # Explore view (chips, category grids, compact cards)
             ├── form.css           # Form inputs, labels
-            └── modal.css          # Modal dialog
+            ├── modal.css          # Modal dialog
+            ├── rating.css         # Star rating styles
+            └── results.css        # Results header, controls, list/grid items
 
 ```
 
@@ -158,8 +169,19 @@ iptv-web/
 **main.js** (Bootstrap)
 - Initializes all components and event listeners
 - Manages global application state (`window.appState`)
-- Orchestrates data flow between components
+- Orchestrates view-swap between Explore and Search Results
 - Handles EPG data loading and search execution
+- Wires shared filter bar (Channels, Show Once, Prefer HD) to both views
+
+**components/explore.js** (Explore View)
+- Default home screen after EPG data loads (replaces static info card)
+- Keyword chips auto-generated from program title frequency analysis
+- Recent searches section (persisted in localStorage, clickable chips)
+- Category-based discover sections grouped by channel genre + time
+- "On Now" (current programs) and "Coming Up" (next 3h) per genre
+- Reuses channel categories from `channelFilter.js` via `getGroupedChannels()`
+- Respects shared filters (Channels, Show Once, Prefer HD)
+- Hides when user searches; returns when search is cleared
 
 **components/settings.js**
 - Settings panel UI (show/hide, form handling)
@@ -193,6 +215,16 @@ iptv-web/
 - Time-based filtering (past, current, future)
 - Sorting (time, channel, title)
 - Result limiting (performance protection)
+
+**utils/keywords.js**
+- Keyword chip generation from EPG program titles
+- Seed list (EN/RU) + frequency analysis with boost scoring
+- Stopword filtering (bilingual), configurable max keywords
+
+**utils/recentSearches.js**
+- Recent search query persistence in localStorage
+- CRUD operations with case-insensitive deduplication
+- Max 10 items, most recent first
 
 **utils/storage.js**
 - localStorage wrapper for EPG URL
@@ -245,6 +277,8 @@ Browser Load
             ├─> initControls() → Attach event listeners
             ├─> initViewToggle() → Setup grid/list toggle
             ├─> initModal() → Setup program details modal
+            ├─> initChannelFilter() → Channel selection popup
+            ├─> initExplore() → Explore view (keyword/search callbacks)
             │
             └─> Check if EPG URL configured
                     │
@@ -284,7 +318,9 @@ User clicks "Load EPG Data"
     │
     ├─> saveLastUpdated(timestamp) to localStorage
     │
-    └─> Display success message with totals
+    ├─> Show shared filter bar (Channels, Show Once, Prefer HD)
+    │
+    └─> showExplore() → Render Explore view as default home screen
 ```
 
 ### 5.3 Search and Filter Flow
@@ -317,7 +353,32 @@ User enters search query OR selects filter OR changes channel selection
             └─> Attach click handlers → showProgramModal()
 ```
 
-### 5.4 Configuration Loading Hierarchy
+### 5.4 Explore View Flow
+
+```
+EPG Data Loaded → showExplore()
+    │
+    ├─> getFilteredPrograms()
+    │       ├─> filterByChannels() (if channels selected)
+    │       ├─> filterUniqueByClosestTime() (if Show Once)
+    │       └─> filterPreferHD() (if Prefer HD)
+    │
+    ├─> generateKeywords(programs) → Keyword chips
+    ├─> getRecentSearches() → Recent search chips
+    │
+    ├─> Group programs by channel category + time:
+    │       ├─> "On Now" (current) → by genre (Movies, Sports, News, Kids...)
+    │       └─> "Coming Up" (future, next 3h) → by genre
+    │
+    └─> Render sections into #exploreSection
+
+View-Swap:
+    Search performed  → hideExplore(), show resultsSection
+    Search cleared    → hideResults(), showExplore()
+    Filter changed    → refreshExplore() (if Explore visible)
+```
+
+### 5.5 Configuration Loading Hierarchy
 
 ```
 1. Browser localStorage (persistent)
@@ -398,10 +459,13 @@ User enters search query OR selects filter OR changes channel selection
 
 | Component | Path | Notes |
 |-----------|------|-------|
-| Main Bootstrap | `public/scripts/main.js` | May add features (pagination) |
+| Main Bootstrap | `public/scripts/main.js` | View-swap orchestration, may add features |
 | Results Component | `public/scripts/components/results.js` | UI enhancements likely |
 | Settings Component | `public/scripts/components/settings.js` | May add more settings |
-| Channel Filter | `public/scripts/components/channelFilter.js` | New feature, may evolve |
+| Channel Filter | `public/scripts/components/channelFilter.js` | Category detection, may evolve |
+| Explore View | `public/scripts/components/explore.js` | New feature, sections may evolve |
+| Keyword Generation | `public/scripts/utils/keywords.js` | Seed list and algorithm may be tuned |
+| Recent Searches | `public/scripts/utils/recentSearches.js` | Simple localStorage CRUD |
 | Component Styles | `public/styles/components/*.css` | Design refinements expected |
 | HTML Structure | `public/index.html` | May add sections/features |
 
@@ -550,7 +614,7 @@ User says: "Add 500 lines of new features to main.js (currently 300 lines)"
 
 ---
 
-**Document Version:** 1.1
-**Last Updated:** January 24, 2026
-**Total Lines:** ~300
+**Document Version:** 1.2
+**Last Updated:** February 11, 2026
+**Total Lines:** ~310
 
