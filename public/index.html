@@ -364,6 +364,22 @@
               </select>
             </div>
 
+            <div class="cinema-filter-group genre-filter-wrapper">
+              <label>Genres</label>
+              <button type="button" class="genre-filter-btn" id="cinemaGenreBtn">
+                Genres <span class="genre-filter-badge" id="cinemaGenreBadge" style="display: none;"></span>
+              </button>
+              <div class="genre-dropdown" id="cinemaGenreDropdown">
+                <div class="genre-dropdown-list" id="cinemaGenreList">
+                  <!-- Genre checkboxes populated dynamically -->
+                </div>
+                <div class="genre-dropdown-actions">
+                  <button type="button" class="btn btn-small btn-outline" id="cinemaGenreClear">Clear</button>
+                  <button type="button" class="btn btn-small btn-primary" id="cinemaGenreApply">Apply</button>
+                </div>
+              </div>
+            </div>
+
             <div class="cinema-filter-group">
               <label for="cinemaRatingFilter">Min Rating: <span id="cinemaRatingValue">Any</span></label>
               <input

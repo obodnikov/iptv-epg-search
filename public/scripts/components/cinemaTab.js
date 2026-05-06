@@ -12,6 +12,7 @@ const cinemaState = {
   filteredResults: [],
   query: '',
   category: 'all',
+  selectedGenres: new Set(), // Selected genres for filtering (OR logic)
   minRating: 0,
   minYear: null,
   maxYear: null,
@@ -99,6 +100,9 @@ function initCinemaControls() {
     performCinemaSearch();
   });
 
+  // Genre filter dropdown
+  initGenreFilter();
+
   // Populate year dropdowns
   populateYearDropdowns();
 }
@@ -144,6 +148,131 @@ function populateYearDropdowns() {
 
   yearMinSelect.innerHTML = options;
   yearMaxSelect.innerHTML = options;
+}
+
+/**
+ * Initialize genre filter dropdown
+ */
+function initGenreFilter() {
+  const genreBtn = document.getElementById('cinemaGenreBtn');
+  const genreDropdown = document.getElementById('cinemaGenreDropdown');
+  const genreClearBtn = document.getElementById('cinemaGenreClear');
+  const genreApplyBtn = document.getElementById('cinemaGenreApply');
+
+  if (!genreBtn || !genreDropdown) return;
+
+  // Toggle dropdown
+  genreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = genreDropdown.classList.contains('genre-dropdown-open');
+    if (isOpen) {
+      closeGenreDropdown();
+    } else {
+      openGenreDropdown();
+    }
+  });
+
+  // Clear all genres
+  genreClearBtn?.addEventListener('click', () => {
+    cinemaState.selectedGenres.clear();
+    updateGenreCheckboxes();
+    updateGenreBadge();
+  });
+
+  // Apply and close
+  genreApplyBtn?.addEventListener('click', () => {
+    closeGenreDropdown();
+    performCinemaSearch();
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!genreDropdown.contains(e.target) && e.target !== genreBtn) {
+      if (genreDropdown.classList.contains('genre-dropdown-open')) {
+        closeGenreDropdown();
+        performCinemaSearch();
+      }
+    }
+  });
+}
+
+/**
+ * Open genre dropdown
+ */
+function openGenreDropdown() {
+  const dropdown = document.getElementById('cinemaGenreDropdown');
+  if (dropdown) dropdown.classList.add('genre-dropdown-open');
+}
+
+/**
+ * Close genre dropdown
+ */
+function closeGenreDropdown() {
+  const dropdown = document.getElementById('cinemaGenreDropdown');
+  if (dropdown) dropdown.classList.remove('genre-dropdown-open');
+}
+
+/**
+ * Populate genre dropdown with available genres
+ * @param {Array} genres - Available genre names
+ */
+function populateGenreDropdown(genres) {
+  const list = document.getElementById('cinemaGenreList');
+  if (!list) return;
+
+  list.innerHTML = '';
+
+  genres.forEach(genre => {
+    const label = document.createElement('label');
+    label.className = 'genre-checkbox-label';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'genre-checkbox-input';
+    checkbox.value = genre;
+    checkbox.checked = cinemaState.selectedGenres.has(genre);
+
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        cinemaState.selectedGenres.add(genre);
+      } else {
+        cinemaState.selectedGenres.delete(genre);
+      }
+      updateGenreBadge();
+    });
+
+    const span = document.createElement('span');
+    span.className = 'genre-checkbox-text';
+    span.textContent = genre;
+
+    label.appendChild(checkbox);
+    label.appendChild(span);
+    list.appendChild(label);
+  });
+}
+
+/**
+ * Update genre checkboxes to reflect current state
+ */
+function updateGenreCheckboxes() {
+  const list = document.getElementById('cinemaGenreList');
+  if (!list) return;
+
+  list.querySelectorAll('.genre-checkbox-input').forEach(cb => {
+    cb.checked = cinemaState.selectedGenres.has(cb.value);
+  });
+}
+
+/**
+ * Update genre button badge count
+ */
+function updateGenreBadge() {
+  const badge = document.getElementById('cinemaGenreBadge');
+  const count = cinemaState.selectedGenres.size;
+  if (badge) {
+    badge.textContent = count > 0 ? `(${count})` : '';
+    badge.style.display = count > 0 ? 'inline' : 'none';
+  }
 }
 
 /**
@@ -203,6 +332,9 @@ async function loadCinemaData() {
 
     // Populate category dropdown
     populateCategoryDropdown(data.categories);
+
+    // Populate genre dropdown
+    populateGenreDropdown(data.genres);
 
     // Hide loading, show success
     hideCinemaLoading();
@@ -266,6 +398,7 @@ function performCinemaSearch() {
   const filtered = filterCinemaItems(cinemaState.data.items, {
     query: cinemaState.query,
     category: cinemaState.category,
+    selectedGenres: cinemaState.selectedGenres,
     minRating: cinemaState.minRating,
     minYear: cinemaState.minYear,
     maxYear: cinemaState.maxYear

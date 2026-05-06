@@ -200,6 +200,7 @@ function parseExtInf(line) {
  * @param {number} [filters.minRating] - Minimum rating
  * @param {number} [filters.minYear] - Minimum year
  * @param {number} [filters.maxYear] - Maximum year
+ * @param {Set} [filters.selectedGenres] - Selected genres (OR logic)
  * @returns {Array} - Filtered items
  */
 export function filterCinemaItems(items, filters = {}) {
@@ -208,6 +209,14 @@ export function filterCinemaItems(items, filters = {}) {
   // Filter by category
   if (filters.category && filters.category !== 'all') {
     result = result.filter(item => item.category === filters.category);
+  }
+
+  // Filter by genres (OR logic: item must have at least one selected genre)
+  if (filters.selectedGenres && filters.selectedGenres.size > 0) {
+    result = result.filter(item => {
+      const itemGenres = Array.isArray(item.genres) ? item.genres : [];
+      return itemGenres.some(g => filters.selectedGenres.has(g));
+    });
   }
 
   // Filter by minimum rating
