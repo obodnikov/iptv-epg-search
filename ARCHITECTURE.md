@@ -39,10 +39,13 @@
 | UI Framework | None (pure HTML/CSS) | Lightweight, no dependencies |
 | Styling | CSS (modular) | sqowe brand design system |
 | Data Format | XMLTV (gzipped) | EPG standard format |
-| Decompression | Pako.js (CDN) | Gzip decompression |
+| Data Format | Extended M3U | Cinema catalog format |
+| Decompression | Pako.js (local) | Gzip decompression |
+| Fuzzy Search | Fuse.js (local) | Fuzzy string matching |
+| Stemming | Snowball (local) | Russian/English morphology |
 | Storage | localStorage | Settings persistence |
 | Deployment | Vercel | Static hosting + serverless functions |
-| CORS Proxy | Vercel Serverless Function | Bypass EPG server CORS |
+| CORS Proxy | Vercel Serverless Function | Bypass EPG/M3U server CORS |
 
 **Architecture Pattern:**
 
@@ -51,6 +54,9 @@
 │                        Browser                               │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │  public/index.html (Single Page)                       │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │  Tab Navigation: [TV Guide] [Cinema]             │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  │ │
 │  │  │   Settings   │  │   Search     │  │   Results   │  │ │
 │  │  │  Component   │  │   Controls   │  │  Component  │  │ │
@@ -63,19 +69,19 @@
 │  │                    │  (Bootstrap)   │                   │ │
 │  │                    └───────┬────────┘                   │ │
 │  │                            │                             │ │
-│  │         ┌──────────────────┼──────────────────┐         │ │
-│  │         │                  │                  │         │ │
-│  │    ┌────▼─────┐     ┌─────▼──────┐    ┌─────▼─────┐   │ │
-│  │    │ storage  │     │ epgParser  │    │  search   │   │ │
-│  │    │  .js     │     │    .js     │    │   .js     │   │ │
-│  │    └──────────┘     └─────┬──────┘    └───────────┘   │ │
-│  │                            │                             │ │
-│  └────────────────────────────┼─────────────────────────────┘ │
-│                               │                               │
-│                    ┌──────────▼──────────┐                   │
-│                    │   Pako.js (CDN)     │                   │
-│                    │  Gzip Decompression │                   │
-│                    └─────────────────────┘                   │
+│  │    ┌───────────────────────┼───────────────────────┐    │ │
+│  │    │           │           │           │           │    │ │
+│  │  ┌─▼──────┐ ┌─▼───────┐ ┌▼────────┐ ┌▼────────┐  │    │ │
+│  │  │storage │ │epgParser│ │ search  │ │m3uParser│  │    │ │
+│  │  │  .js   │ │   .js   │ │  .js    │ │   .js   │  │    │ │
+│  │  └────────┘ └────┬────┘ └─────────┘ └─────────┘  │    │ │
+│  │                   │                                │    │ │
+│  └───────────────────┼────────────────────────────────┘    │ │
+│                      │                                      │
+│           ┌──────────▼──────────┐                          │
+│           │   Pako.js (local)   │                          │
+│           │  Gzip Decompression │                          │
+│           └─────────────────────┘                          │
 └─────────────────────────────────────────────────────────────┘
                                │
                     ┌──────────▼──────────┐
@@ -85,10 +91,12 @@
                     │  └────────┬───────┘ │
                     └───────────┼─────────┘
                                 │
-                    ┌───────────▼──────────┐
-                    │  EPG Server          │
-                    │  (External XMLTV)    │
-                    └──────────────────────┘
+               ┌────────────────┼────────────────┐
+               │                                 │
+    ┌──────────▼──────────┐       ┌──────────────▼───────┐
+    │  EPG Server          │       │  Cinema M3U Server   │
+    │  (External XMLTV)    │       │  (External M3U)      │
+    └──────────────────────┘       └──────────────────────┘
 ```
 
 ---
@@ -112,7 +120,7 @@ iptv-web/
 ├── vercel.json                    # ✅ Vercel deployment config
 │
 ├── api/                           # ✅ Serverless functions
-│   └── proxy.js                   # CORS proxy for EPG fetching
+│   └── proxy.js                   # CORS proxy for EPG/M3U fetching
 │
 └── public/                        # ✅ Static web root
     ├── index.html                 # Single-page application entry
@@ -123,11 +131,16 @@ iptv-web/
     │   ├── components/            # UI components
     │   │   ├── results.js         # Results display, modal, view toggle
     │   │   ├── settings.js        # Settings panel, URL management
-    │   │   └── channelFilter.js   # Channel filter popup, grouping, persistence
+    │   │   ├── channelFilter.js   # Channel filter popup, grouping, persistence
+    │   │   ├── tabs.js            # Tab navigation (TV Guide / Cinema)
+    │   │   └── cinemaTab.js       # Cinema tab: load, search, filter, display
     │   │
     │   └── utils/                 # Utility modules
     │       ├── epgParser.js       # XML parsing, decompression, time utils
+    │       ├── m3uParser.js       # M3U parsing, series grouping, cinema filters
     │       ├── search.js          # Search, filter, sort logic (incl. channel filter)
+    │       ├── fuzzySearch.js     # Fuse.js integration, stemming
+    │       ├── ratings.js         # Program rating system
     │       └── storage.js         # localStorage wrapper
     │
     └── styles/                    # CSS modules
@@ -138,8 +151,12 @@ iptv-web/
             ├── button.css         # Button variants
             ├── card.css           # Card component
             ├── channel-filter.css # Channel filter popup styles
+            ├── cinema.css         # Cinema cards, series modal, genre dropdown
             ├── form.css           # Form inputs, labels
-            └── modal.css          # Modal dialog
+            ├── modal.css          # Modal dialog
+            ├── rating.css         # Rating stars
+            ├── results.css        # Results grid/list
+            └── tabs.css           # Tab navigation bar
 
 ```
 
@@ -181,6 +198,21 @@ iptv-web/
 - Selection persistence via localStorage
 - Bulk actions (Select All, Clear All, Invert)
 
+**components/tabs.js**
+- Tab navigation UI (TV Guide / Cinema)
+- Tab switching with localStorage persistence
+- ARIA attributes for accessibility
+- Validates saved tab against available tabs on init
+
+**components/cinemaTab.js**
+- Cinema tab UI: search, filters, results display
+- Loads and parses M3U playlists via m3uParser
+- Filters: category, genre (multi-select dropdown), rating, year range
+- Displays grouped series as single cards with episode count
+- Series modal with season tabs and episode play links
+- Film modal with metadata and play button
+- Cancel-and-replace loading with AbortController
+
 **utils/epgParser.js**
 - Fetches EPG data (direct or via proxy)
 - Decompresses gzipped XML using Pako.js
@@ -193,6 +225,26 @@ iptv-web/
 - Time-based filtering (past, current, future)
 - Sorting (time, channel, title)
 - Result limiting (performance protection)
+
+**utils/m3uParser.js**
+- Fetches M3U data (direct or via proxy, with AbortSignal support)
+- Parses extended M3U format into structured objects
+- Extracts metadata: title, genres, rating, year, country, director, poster, description
+- Groups serial episodes into series (S##E## detection, case-insensitive)
+- Deduplicates episodes, consolidates metadata across episodes
+- Filters by category, genre, rating, year, text search
+- Sorts by rating, year, added date, title
+
+**utils/fuzzySearch.js**
+- Fuse.js integration for fuzzy string matching
+- Russian/English stemming via Snowball
+- Search index building with progress reporting
+
+**utils/ratings.js**
+- Program rating system (1-5 stars)
+- Rating persistence in localStorage
+- Export/import ratings as JSON
+- Rating boost for search results
 
 **utils/storage.js**
 - localStorage wrapper for EPG URL
@@ -317,12 +369,70 @@ User enters search query OR selects filter OR changes channel selection
             └─> Attach click handlers → showProgramModal()
 ```
 
-### 5.4 Configuration Loading Hierarchy
+### 5.4 Cinema Data Loading & Search Flow
+
+```
+User clicks "Load Cinema Data" (Cinema tab)
+    │
+    ├─> getCinemaUrl() from localStorage
+    │
+    ├─> fetchM3uData(url, signal)
+    │       │
+    │       ├─> Production: /api/proxy?url=...
+    │       └─> Localhost: Direct fetch
+    │
+    ├─> Receive M3U text (plain text, not gzipped)
+    │
+    ├─> parseM3u(text) [chunked async, yields to event loop]
+    │       │
+    │       ├─> Parse #EXTINF attributes (genres, rating, year, etc.)
+    │       ├─> Parse #EXTIMG (poster URL)
+    │       ├─> Parse #EXTDESC (description)
+    │       └─> Return { items, categories, genres, stats }
+    │
+    ├─> groupSeriesEpisodes(items)
+    │       │
+    │       ├─> Detect S##E## pattern in titles (case-insensitive)
+    │       ├─> Group episodes by normalized series title
+    │       ├─> Deduplicate episodes (season+episode key)
+    │       ├─> Consolidate metadata (merge genres, earliest year, etc.)
+    │       └─> Return { films: [...], series: [...] }
+    │
+    ├─> Store in cinemaState (module-scoped)
+    │
+    └─> Populate category/genre dropdowns
+
+Cinema Search:
+    │
+    ├─> filterCinemaItems(displayItems, filters)
+    │       │
+    │       ├─> Filter by category
+    │       ├─> Filter by genres (OR logic)
+    │       ├─> Filter by min rating
+    │       ├─> Filter by year range
+    │       └─> Filter by text (title + seriesTitle + description)
+    │
+    ├─> sortCinemaItems(filtered, sortBy)
+    │
+    ├─> Limit to 100 results
+    │
+    └─> displayCinemaResults()
+            │
+            ├─> Render film cards (poster, title, rating, year)
+            ├─> Render series cards (poster, title, season/episode count)
+            ├─> Click film → showFilmModal() (metadata + play button)
+            └─> Click series → showSeriesModal() (season tabs + episode list)
+```
+
+### 5.5 Configuration Loading Hierarchy
 
 ```
 1. Browser localStorage (persistent)
    ├─> EPG URL, Last Updated timestamp
-   └─> Channel filter selection (iptv-channel-filter key)
+   ├─> Cinema M3U URL, Cinema Last Updated timestamp
+   ├─> Active tab preference (tv-guide / cinema)
+   ├─> Channel filter selection (iptv-channel-filter key)
+   └─> Search preferences (fuzzy, threshold, manual mode)
 
 2. Application State (runtime)
    └─> window.appState
@@ -401,7 +511,10 @@ User enters search query OR selects filter OR changes channel selection
 | Main Bootstrap | `public/scripts/main.js` | May add features (pagination) |
 | Results Component | `public/scripts/components/results.js` | UI enhancements likely |
 | Settings Component | `public/scripts/components/settings.js` | May add more settings |
-| Channel Filter | `public/scripts/components/channelFilter.js` | New feature, may evolve |
+| Channel Filter | `public/scripts/components/channelFilter.js` | Established feature, may evolve |
+| Tab Navigation | `public/scripts/components/tabs.js` | Stable, may add more tabs |
+| Cinema Tab | `public/scripts/components/cinemaTab.js` | New feature, actively evolving |
+| M3U Parser | `public/scripts/utils/m3uParser.js` | New, series grouping may evolve |
 | Component Styles | `public/styles/components/*.css` | Design refinements expected |
 | HTML Structure | `public/index.html` | May add sections/features |
 
@@ -414,6 +527,7 @@ User enters search query OR selects filter OR changes channel selection
 | View Toggle | Grid/List view in `results.js` | May add more view modes |
 | Result Limiting | 100-item cap in `main.js` | May implement pagination |
 | EPG Analysis | `analyzeEpgXml()` in `epgParser.js` | Debug tool, may be removed |
+| Series Grouping Regex | `EPISODE_REGEX` in `m3uParser.js` | May need more patterns |
 
 **Guidance:** These features work but may be redesigned. Don't build dependencies on them.
 
@@ -422,9 +536,10 @@ User enters search query OR selects filter OR changes channel selection
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | Pagination | Handle >100 results gracefully | Medium |
-| Favorites | Save favorite programs | Low |
+| Favorites | Save favorite programs/movies | Low |
 | Export | Export search results | Low |
 | Dark Mode | Theme toggle | Low |
+| Cinema Fuzzy Search | Fuse.js index for cinema catalog | Medium |
 
 **Guidance:** These are ideas, not commitments. Discuss before implementing.
 
@@ -538,6 +653,13 @@ User says: "Add 500 lines of new features to main.js (currently 300 lines)"
 4. Link CSS in `public/index.html`
 5. Follow sqowe brand guidelines (`AI_WEB_DESIGN_SQOWE.md`)
 
+**Add a new cinema filter:**
+1. Add filter state to `cinemaState` in `cinemaTab.js`
+2. Add filter logic to `filterCinemaItems()` in `m3uParser.js`
+3. Add UI control in cinema tab panel in `index.html`
+4. Wire up event listener in `initCinemaControls()`
+5. Call `performCinemaSearch()` on filter change
+
 **Modify EPG parsing:**
 1. Update `public/scripts/utils/epgParser.js`
 2. Test with real EPG data (gzipped XMLTV)
@@ -550,7 +672,7 @@ User says: "Add 500 lines of new features to main.js (currently 300 lines)"
 
 ---
 
-**Document Version:** 1.1
-**Last Updated:** January 24, 2026
-**Total Lines:** ~300
+**Document Version:** 2.0
+**Last Updated:** May 6, 2026
+**Total Lines:** ~400
 
