@@ -237,8 +237,9 @@ export function filterCinemaItems(items, filters = {}) {
     const query = filters.query.trim().toLowerCase();
     result = result.filter(item => {
       const title = (item.title || '').toLowerCase();
+      const seriesTitle = (item.seriesTitle || '').toLowerCase();
       const desc = (item.description || '').toLowerCase();
-      return title.includes(query) || desc.includes(query);
+      return title.includes(query) || seriesTitle.includes(query) || desc.includes(query);
     });
   }
 
@@ -284,4 +285,124 @@ export function sortCinemaItems(items, sortBy) {
   }
 
   return sorted;
+}
+
+/** Regex to detect S##E## pattern in titles (case-insensitive, tolerant) */
+const EPISODE_REGEX = /^(.+?)\s+[Ss](\d+)\s*[Ee](\d+)(?:\s*[-:].*)?$/;
+
+/**
+ * Group serial episodes into series objects
+ * Items with S##E## in title are grouped; others remain as films.
+ * @param {Array} items - All parsed cinema items
+ * @returns {Object} - { films: [...], series: [...] }
+ *   Each series: { seriesTitle, poster, genres, rating, year, country, director,
+ *                  category, added, description, totalEpisodes, seasonCount,
+ *                  seasons: { 1: [{episode, streamUrl, duration}], 2: [...] } }
+ */
+export function groupSeriesEpisodes(items) {
+  const films = [];
+  const seriesMap = new Map(); // key: "seriesTitle|category" → series object
+
+  for (const item of items) {
+    const match = (item.title || '').match(EPISODE_REGEX);
+
+    if (match) {
+      const seriesTitle = match[1].trim();
+      const season = parseInt(match[2], 10);
+      const episode = parseInt(match[3], 10);
+
+      // Group by normalized title (trim + lowercase) to avoid fragmentation
+      // when category metadata differs across episodes
+      const key = seriesTitle.toLowerCase();
+
+      if (!seriesMap.has(key)) {
+        seriesMap.set(key, {
+          type: 'series',
+          seriesTitle,
+          title: seriesTitle, // For compatibility with filter/sort functions
+          poster: item.poster || '',
+          genres: Array.isArray(item.genres) ? [...item.genres] : [],
+          rating: item.rating,
+          year: item.year,
+          country: item.country || '',
+          director: item.director || '',
+          category: item.category || '',
+          added: item.added || '',
+          description: item.description || '',
+          totalEpisodes: 0,
+          seasonCount: 0,
+          seasons: {},
+          _episodeKeys: new Set() // Track seen episodes for deduplication
+        });
+      }
+
+      const series = seriesMap.get(key);
+
+      // Consolidate metadata from all episodes
+      if (!series.poster && item.poster) series.poster = item.poster;
+      if (!series.description && item.description) series.description = item.description;
+      if (!series.rating && item.rating) series.rating = item.rating;
+      if (!series.director && item.director) series.director = item.director;
+      if (!series.country && item.country) series.country = item.country;
+      // Use earliest year (series start year)
+      if (item.year && (!series.year || item.year < series.year)) {
+        series.year = item.year;
+      }
+      // Merge genres (deduplicate)
+      if (Array.isArray(item.genres)) {
+        for (const g of item.genres) {
+          if (!series.genres.includes(g)) {
+            series.genres.push(g);
+          }
+        }
+      }
+      // Use most recent added date (compare as timestamps)
+      if (item.added) {
+        const itemTime = Date.parse(item.added) || 0;
+        const seriesTime = Date.parse(series.added) || 0;
+        if (itemTime > seriesTime) {
+          series.added = item.added;
+        }
+      }
+
+      // Add episode to season (deduplicate by season+episode number)
+      if (!series.seasons[season]) {
+        series.seasons[season] = [];
+      }
+
+      const episodeKey = `${season}-${episode}`;
+      if (!series._episodeKeys.has(episodeKey)) {
+        series._episodeKeys.add(episodeKey);
+        series.seasons[season].push({
+          episode,
+          season,
+          title: item.title,
+          streamUrl: item.streamUrl || '',
+          duration: item.duration || 0
+        });
+        series.totalEpisodes++;
+      }
+    } else {
+      // Regular film/item
+      films.push({ ...item, type: 'film' });
+    }
+  }
+
+  // Finalize series: sort episodes within seasons, compute seasonCount, clean up
+  const series = [];
+  for (const s of seriesMap.values()) {
+    s.seasonCount = Object.keys(s.seasons).length;
+
+    // Sort episodes within each season
+    for (const seasonNum of Object.keys(s.seasons)) {
+      s.seasons[seasonNum].sort((a, b) => a.episode - b.episode);
+    }
+
+    // Remove internal deduplication tracker
+    delete s._episodeKeys;
+
+    series.push(s);
+  }
+
+  return { films, series };
 }

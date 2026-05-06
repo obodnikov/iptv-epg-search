@@ -3,12 +3,14 @@
  * Manages cinema M3U catalog: loading, searching, filtering, and displaying results
  */
 
-import { fetchM3uData, parseM3u, filterCinemaItems, sortCinemaItems } from '../utils/m3uParser.js';
+import { fetchM3uData, parseM3u, filterCinemaItems, sortCinemaItems, groupSeriesEpisodes } from '../utils/m3uParser.js';
 import { getCinemaUrl, saveCinemaLastUpdated } from '../utils/storage.js';
 
 // Cinema state (module-scoped)
 const cinemaState = {
   data: null,         // Parsed M3U data { items, categories, genres, stats }
+  groupedData: null,  // Grouped data { films: [...], series: [...] }
+  displayItems: [],   // Combined films + series for display (after grouping)
   filteredResults: [],
   query: '',
   category: 'all',
@@ -327,6 +329,14 @@ async function loadCinemaData() {
     // Store in state
     cinemaState.data = data;
 
+    // Group series episodes
+    const grouped = groupSeriesEpisodes(data.items);
+    cinemaState.groupedData = grouped;
+    // Combine films + series into a single display list
+    cinemaState.displayItems = [...grouped.films, ...grouped.series];
+
+    console.log(`Grouped: ${grouped.films.length} films, ${grouped.series.length} series`);
+
     // Save timestamp
     saveCinemaLastUpdated(Date.now());
 
@@ -348,6 +358,8 @@ async function loadCinemaData() {
     console.error('Failed to load cinema data:', error);
     // Clear stale data on failure to prevent misleading search results
     cinemaState.data = null;
+    cinemaState.groupedData = null;
+    cinemaState.displayItems = [];
     cinemaState.filteredResults = [];
     hideCinemaLoading();
     showCinemaError(error.message || 'Failed to load cinema data. Check URL and try again.');
@@ -391,11 +403,11 @@ function populateCategoryDropdown(categories) {
  * Perform cinema search with current filters
  */
 function performCinemaSearch() {
-  if (!cinemaState.data) {
+  if (!cinemaState.data || !cinemaState.displayItems) {
     return;
   }
 
-  const filtered = filterCinemaItems(cinemaState.data.items, {
+  const filtered = filterCinemaItems(cinemaState.displayItems, {
     query: cinemaState.query,
     category: cinemaState.category,
     selectedGenres: cinemaState.selectedGenres,
@@ -474,7 +486,9 @@ function displayCinemaResults(items, hasMore, totalResults) {
  * @returns {string} - HTML string (all values escaped)
  */
 function renderCinemaCard(item) {
-  const escapedTitle = escapeHtml(item.title);
+  const isSeries = item.type === 'series';
+  const displayTitle = isSeries ? item.seriesTitle : item.title;
+  const escapedTitle = escapeHtml(displayTitle);
   const ratingBadge = item.rating
     ? `<span class="cinema-card-rating">★ ${escapeHtml(item.rating.toFixed(1))}</span>`
     : '';
@@ -484,18 +498,24 @@ function renderCinemaCard(item) {
     ? `<span class="cinema-card-category">${escapeHtml(item.category)}</span>`
     : '';
 
+  // Series info line
+  const seriesInfo = isSeries
+    ? `<span class="cinema-card-series-info">${item.seasonCount} сез. • ${item.totalEpisodes} серий</span>`
+    : '';
+
   // Validate poster URL (only allow http/https)
   const posterUrl = sanitizeUrl(item.poster);
   const posterHtml = posterUrl
     ? `<div class="cinema-card-poster">
-        <img src="${escapeAttr(posterUrl)}" alt="${escapeAttr(item.title)}" loading="lazy" onerror="this.parentElement.classList.add('poster-error')">
+        <img src="${escapeAttr(posterUrl)}" alt="${escapeAttr(displayTitle)}" loading="lazy" onerror="this.parentElement.classList.add('poster-error')">
+        ${isSeries ? '<span class="cinema-card-series-badge">📺</span>' : ''}
        </div>`
     : `<div class="cinema-card-poster poster-placeholder">
-        <span class="poster-placeholder-icon">🎬</span>
+        <span class="poster-placeholder-icon">${isSeries ? '📺' : '🎬'}</span>
        </div>`;
 
   return `
-    <div class="cinema-card card card-interactive" tabindex="0" role="button" aria-label="${escapeAttr(item.title)}">
+    <div class="cinema-card card card-interactive${isSeries ? ' cinema-card-series' : ''}" tabindex="0" role="button" aria-label="${escapeAttr(displayTitle)}">
       ${posterHtml}
       <div class="cinema-card-body">
         <h3 class="cinema-card-title">${escapedTitle}</h3>
@@ -503,6 +523,7 @@ function renderCinemaCard(item) {
           ${ratingBadge}
           ${yearText ? `<span class="cinema-card-year">${yearText}</span>` : ''}
         </div>
+        ${seriesInfo}
         ${categoryTag}
       </div>
     </div>
@@ -511,7 +532,7 @@ function renderCinemaCard(item) {
 
 /**
  * Show cinema item details in modal
- * @param {Object} item - Cinema item
+ * @param {Object} item - Cinema item (film or series)
  */
 function showCinemaModal(item) {
   const modal = document.getElementById('programModal');
@@ -520,6 +541,22 @@ function showCinemaModal(item) {
 
   if (!modal || !modalTitle || !modalBody) return;
 
+  if (item.type === 'series') {
+    showSeriesModal(item, modalTitle, modalBody);
+  } else {
+    showFilmModal(item, modalTitle, modalBody);
+  }
+
+  modal.style.display = 'flex';
+}
+
+/**
+ * Show film details in modal
+ * @param {Object} item - Film item
+ * @param {HTMLElement} modalTitle - Modal title element
+ * @param {HTMLElement} modalBody - Modal body element
+ */
+function showFilmModal(item, modalTitle, modalBody) {
   modalTitle.textContent = item.title;
 
   const genresList = Array.isArray(item.genres) ? item.genres : [];
@@ -551,7 +588,6 @@ function showCinemaModal(item) {
     ? `<p class="cinema-modal-description">${escapeHtml(item.description)}</p>`
     : '';
 
-  // Validate stream URL (only allow http/https)
   const streamUrl = sanitizeUrl(item.streamUrl);
   const playBtn = streamUrl
     ? `<a href="${escapeAttr(streamUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary mt-md">▶ Play</a>`
@@ -564,8 +600,95 @@ function showCinemaModal(item) {
     ${description}
     ${playBtn}
   `;
+}
 
-  modal.style.display = 'flex';
+/**
+ * Show series details in modal with season tabs and episode list
+ * @param {Object} series - Series item with seasons data
+ * @param {HTMLElement} modalTitle - Modal title element
+ * @param {HTMLElement} modalBody - Modal body element
+ */
+function showSeriesModal(series, modalTitle, modalBody) {
+  modalTitle.textContent = series.seriesTitle;
+
+  const genresList = Array.isArray(series.genres) ? series.genres : [];
+  const genres = genresList.length > 0
+    ? `<p><strong>Genres:</strong> ${escapeHtml(genresList.join(', '))}</p>`
+    : '';
+
+  const rating = series.rating
+    ? `<p><strong>Rating:</strong> ★ ${escapeHtml(series.rating.toFixed(1))}</p>`
+    : '';
+
+  const year = series.year
+    ? `<p><strong>Year:</strong> ${escapeHtml(String(series.year))}</p>`
+    : '';
+
+  const country = series.country
+    ? `<p><strong>Country:</strong> ${escapeHtml(series.country)}</p>`
+    : '';
+
+  const director = series.director
+    ? `<p><strong>Director:</strong> ${escapeHtml(series.director)}</p>`
+    : '';
+
+  const description = series.description
+    ? `<p class="cinema-modal-description">${escapeHtml(series.description)}</p>`
+    : '';
+
+  const info = `<p><strong>Seasons:</strong> ${series.seasonCount} • <strong>Episodes:</strong> ${series.totalEpisodes}</p>`;
+
+  // Build season tabs
+  const seasonNumbers = Object.keys(series.seasons).map(Number).sort((a, b) => a - b);
+  const seasonTabs = seasonNumbers.map((num, idx) =>
+    `<button type="button" class="season-tab${idx === 0 ? ' season-tab-active' : ''}" data-season="${num}">S${num}</button>`
+  ).join('');
+
+  // Build episode lists for each season
+  const seasonPanels = seasonNumbers.map((num, idx) => {
+    const episodes = series.seasons[num];
+    const episodeRows = episodes.map(ep => {
+      const epUrl = sanitizeUrl(ep.streamUrl);
+      const durationText = ep.duration > 0 ? `${Math.round(ep.duration / 60)} мин` : '';
+      const playLink = epUrl
+        ? `<a href="${escapeAttr(epUrl)}" target="_blank" rel="noopener noreferrer" class="episode-play-btn" title="Play">▶</a>`
+        : '';
+      return `
+        <div class="episode-row">
+          <span class="episode-number">E${String(ep.episode).padStart(2, '0')}</span>
+          <span class="episode-duration">${durationText}</span>
+          ${playLink}
+        </div>
+      `;
+    }).join('');
+
+    return `<div class="season-panel${idx === 0 ? ' season-panel-active' : ''}" data-season="${num}">${episodeRows}</div>`;
+  }).join('');
+
+  modalBody.innerHTML = `
+    <div class="cinema-modal-details">
+      ${rating}${year}${country}${director}${genres}${info}
+    </div>
+    ${description}
+    <div class="series-seasons">
+      <div class="season-tabs">${seasonTabs}</div>
+      <div class="season-panels">${seasonPanels}</div>
+    </div>
+  `;
+
+  // Attach season tab click handlers
+  modalBody.querySelectorAll('.season-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const seasonNum = tab.dataset.season;
+      // Update active tab
+      modalBody.querySelectorAll('.season-tab').forEach(t => t.classList.remove('season-tab-active'));
+      tab.classList.add('season-tab-active');
+      // Update active panel
+      modalBody.querySelectorAll('.season-panel').forEach(p => p.classList.remove('season-panel-active'));
+      const panel = modalBody.querySelector(`.season-panel[data-season="${seasonNum}"]`);
+      if (panel) panel.classList.add('season-panel-active');
+    });
+  });
 }
 
 /**
@@ -645,12 +768,19 @@ function showCinemaDataLoaded(stats) {
 
   if (noData) noData.style.display = 'none';
 
+  // Get grouped counts
+  const grouped = cinemaState.groupedData;
+  const filmsCount = grouped ? grouped.films.length : 0;
+  const seriesCount = grouped ? grouped.series.length : 0;
+
   if (dataLoaded) {
     dataLoaded.innerHTML = `
       <div class="card-body" style="text-align: left;">
         <h3 class="card-title">Cinema Catalog Loaded</h3>
         <p class="card-description mb-lg">
-          Loaded <strong>${stats.totalItems.toLocaleString()}</strong> items
+          Loaded <strong>${stats.totalItems.toLocaleString()}</strong> items:
+          <strong>${filmsCount.toLocaleString()}</strong> films,
+          <strong>${seriesCount.toLocaleString()}</strong> series
           in <strong>${stats.totalCategories}</strong> categories.
         </p>
         <p class="card-description">
