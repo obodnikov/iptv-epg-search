@@ -1,9 +1,10 @@
 # IPTV EPG Search
 
-A simple web application for searching and browsing IPTV Electronic Program Guide (EPG) data.
+A web application for searching IPTV Electronic Program Guide (EPG) data and browsing online cinema catalogs (M3U playlists).
 
 ## Features
 
+### TV Guide Tab
 - **Fuzzy Search**: Morphology-aware search with Russian/English stemming (handles word variations like "Убийство" → "Убийства")
 - **Channel Filter**: Filter results by channels with smart grouping and quick filters
   - Auto-groups channels by category (HD, News, Movies, Sports, Kids, General)
@@ -15,10 +16,26 @@ A simple web application for searching and browsing IPTV Electronic Program Guid
 - **Search Programs**: Search by program title, description, or channel name
 - **Time Filters**: Filter programs by past, current, or future
 - **View Modes**: Switch between grid and list views
+
+### Cinema Tab
+- **M3U Catalog**: Load and browse online cinema M3U playlists
+- **Series Grouping**: Serial episodes are automatically grouped into series (detects S01E01 pattern)
+- **Series Modal**: Click a series to see season tabs with episode play links
+- **Genre Filter**: Multi-select dropdown to filter by genre (OR logic)
+- **Category Filter**: Filter by playlist category (Ultra HD, Фильмы, Сериалы, etc.)
+- **Rating Filter**: Minimum rating slider
+- **Year Filter**: Year range (from/to)
+- **Sort Options**: By rating, year, date added, or title
+- **Poster Images**: Cinema cards display poster thumbnails
+- **Play Links**: Direct HLS stream links for films and individual episodes
+
+### General
+- **Tab Navigation**: Switch between TV Guide and Cinema with persistent tab state
 - **Clean UI**: Material-inspired design following sqowe brand guidelines
 - **Responsive**: Works on mobile, tablet, and desktop devices
 - **Client-side**: All processing happens in your browser
 - **No Build Step**: Pure vanilla JavaScript, runs directly in browser
+- **Security**: XSS-safe rendering, URL sanitization, proxy content-type allowlist
 
 ## Getting Started
 
@@ -58,13 +75,14 @@ php -S localhost:8000
 
 Then open `http://localhost:8000` in your browser.
 
-### 2. Configure EPG URL
+### 2. Configure URLs
 
 1. Click the "Settings" button in the header
-2. Enter your EPG URL (default is pre-filled: `http://s03.wsbof.com:8080/xml/4a27b28d.gz`)
-3. Click "Save Settings"
+2. Enter your EPG URL for the TV Guide tab (e.g., `http://s03.wsbof.com:8080/xml/4a27b28d.gz`)
+3. Enter your Cinema M3U URL for the Cinema tab (e.g., `http://cb-media1.com/smartup/4a27b28d/index.m3u`)
+4. Click "Save Settings"
 
-The URL will be stored in your browser's localStorage.
+At least one URL is required. Both are stored in your browser's localStorage.
 
 ### 3. Load EPG Data
 
@@ -107,6 +125,21 @@ In Settings, you can:
 - **Import Ratings**: Restore previously exported ratings
 - **Clear All**: Remove all ratings (with confirmation)
 
+### 6. Use Cinema Tab
+
+1. Click the "Cinema" tab in the navigation bar
+2. Click "Load Cinema Data" to fetch and parse the M3U playlist
+3. Browse the catalog using filters:
+   - **Category**: Select a playlist category (Ultra HD, Фильмы, Сериалы, etc.)
+   - **Genres**: Click "Genres" button to open multi-select dropdown
+   - **Min Rating**: Drag slider to set minimum rating threshold
+   - **Year**: Set year range with From/To dropdowns
+   - **Sort**: Choose sort order (newest, rating, year, title)
+4. Click a **film card** to see details and play link
+5. Click a **series card** (marked with 📺) to see:
+   - Season tabs (S1, S2, S3...)
+   - Episode list with play buttons for each episode
+
 For detailed information about fuzzy search and ratings, see [Fuzzy Search Guide](docs/FUZZY_SEARCH_GUIDE.md).
 
 ## Project Structure
@@ -114,37 +147,48 @@ For detailed information about fuzzy search and ratings, see [Fuzzy Search Guide
 ```
 iptv-web/
 ├── public/
-│   └── index.html           # Main HTML file
-├── styles/
-│   ├── base.css            # CSS variables, resets, typography
-│   ├── layout.css          # Grid, containers, layout utilities
-│   └── components/
-│       ├── button.css      # Button styles
-│       ├── card.css        # Card component styles
-│       └── form.css        # Form and input styles
-├── scripts/
-│   ├── main.js             # Application bootstrap
-│   ├── utils/
-│   │   ├── storage.js      # localStorage management
-│   │   ├── epgParser.js    # XML parsing and decompression
-│   │   └── search.js       # Search and filter logic
-│   └── components/
-│       ├── settings.js     # Settings UI component
-│       ├── results.js      # Results display component
-│       └── channelFilter.js # Channel filter popup component
-└── README.md               # This file
+│   ├── index.html              # Main HTML file (single page with tabs)
+│   ├── scripts/
+│   │   ├── main.js             # Application bootstrap
+│   │   ├── components/
+│   │   │   ├── results.js      # EPG results display, modal, view toggle
+│   │   │   ├── settings.js     # Settings UI component
+│   │   │   ├── channelFilter.js # Channel filter popup
+│   │   │   ├── tabs.js         # Tab navigation (TV Guide / Cinema)
+│   │   │   ├── cinemaTab.js    # Cinema tab: load, search, filter, display
+│   │   │   └── ratingControl.js # Star rating widget
+│   │   └── utils/
+│   │       ├── storage.js      # localStorage management
+│   │       ├── epgParser.js    # XML parsing and decompression
+│   │       ├── m3uParser.js    # M3U parsing, series grouping, filters
+│   │       ├── search.js       # EPG search and filter logic
+│   │       ├── fuzzySearch.js  # Fuse.js integration
+│   │       └── ratings.js      # Rating system
+│   ├── styles/
+│   │   ├── base.css            # CSS variables, resets, typography
+│   │   ├── layout.css          # Grid, containers, layout utilities
+│   │   └── components/         # Component-specific styles
+│   │       ├── button.css, card.css, form.css, modal.css
+│   │       ├── channel-filter.css, rating.css, results.css
+│   │       ├── tabs.css        # Tab navigation styles
+│   │       └── cinema.css      # Cinema cards, series modal, genre filter
+│   └── vendor/                 # Local copies of libraries (Pako, Fuse, Snowball)
+├── api/
+│   └── proxy.js                # Vercel serverless CORS proxy
+├── ARCHITECTURE.md             # System architecture documentation
+└── README.md                   # This file
 ```
 
 ## Technical Details
 
 ### Dependencies
 
-- **Pako**: For gzip decompression (loaded via CDN)
-- **Snowball Stemmer**: For Russian/English morphology support (loaded via CDN)
-- **Fuse.js**: For fuzzy string matching (loaded via CDN)
+- **Pako**: For gzip decompression (local copy in `vendor/`)
+- **Snowball Stemmer**: For Russian/English morphology support (local copy in `vendor/`)
+- **Fuse.js**: For fuzzy string matching (local copy in `vendor/`)
 - **Google Fonts**: Montserrat font family
 
-No build tools or package managers required! All dependencies load from CDN.
+No build tools or package managers required! All libraries are bundled locally.
 
 ### Browser Compatibility
 
@@ -169,6 +213,26 @@ The application expects EPG data in XMLTV format:
 ```
 
 The file should be gzip-compressed (.gz extension).
+
+### Cinema M3U Format
+
+The Cinema tab expects extended M3U playlists with metadata attributes:
+
+```
+#EXTM3U
+#EXTINF:5760 genres="Боевик,Новинки" rating="7" year="2024" country="France" director="Julien Seri" group-title="Ultra HD", Кали (4K HDR)
+#EXTIMG:http://example.com/poster.jpg
+#EXTDESC:Film description text...
+http://example.com/stream.m3u8
+
+#EXTINF:-1 genres="Драма" rating="8" year="2026" duration="44" country="USA" group-title="Сериалы", Тёмные ветра S01E01
+#EXTIMG:http://example.com/series-poster.jpg
+#EXTDESC:Series description...
+http://example.com/s01e01.m3u8
+```
+
+Supported attributes: `genres`, `rating`, `year`, `country`, `director`, `group-title`, `added`, `duration`.
+Series episodes are detected by `S##E##` pattern in the title and grouped automatically.
 
 ## CORS Considerations
 
