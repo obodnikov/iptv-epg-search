@@ -1,0 +1,91 @@
+/* tabs.css - Tab Navigation Styles */
+
+/* ========================================
+   Tab Bar
+   ======================================== */
+
+.tab-bar {
+  background: var(--sqowe-dark-ground);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0;
+}
+
+.tab-bar .container {
+  display: flex;
+  gap: 0;
+}
+
+/* ========================================
+   Tab Buttons
+   ======================================== */
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-xl);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-medium);
+  color: var(--sqowe-light-grey);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: var(--sqowe-light-purple);
+  background: rgba(142, 136, 163, 0.08);
+}
+
+.tab-btn:focus-visible {
+  outline: 2px solid var(--sqowe-light-purple);
+  outline-offset: -2px;
+}
+
+.tab-btn-active {
+  color: white;
+  border-bottom-color: var(--sqowe-light-purple);
+}
+
+.tab-btn-active:hover {
+  color: white;
+}
+
+/* Tab icon */
+.tab-btn-icon {
+  font-size: 1.1em;
+}
+
+/* ========================================
+   Tab Panels
+   ======================================== */
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel[aria-hidden="false"] {
+  display: block;
+}
+
+/* ========================================
+   Responsive
+   ======================================== */
+
+@media (max-width: 768px) {
+  .tab-btn {
+    padding: var(--space-sm) var(--space-md);
+    font-size: var(--font-size-small);
+  }
+
+  .tab-bar .container {
+    gap: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

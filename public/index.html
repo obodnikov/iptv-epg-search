@@ -28,6 +28,8 @@
   <link rel="stylesheet" href="styles/components/rating.css">
   <link rel="stylesheet" href="styles/components/channel-filter.css">
   <link rel="stylesheet" href="styles/components/results.css">
+  <link rel="stylesheet" href="styles/components/tabs.css">
+  <link rel="stylesheet" href="styles/components/cinema.css">
 </head>
 <body>
 
@@ -42,6 +44,18 @@
       </div>
     </div>
   </header>
+
+  <!-- Tab Navigation -->
+  <nav class="tab-bar" aria-label="Main navigation">
+    <div class="container">
+      <button type="button" class="tab-btn tab-btn-active" id="tab-tv-guide" data-tab="tv-guide" role="tab" aria-selected="true" aria-controls="tab-panel-tv-guide">
+        <span class="tab-btn-icon" aria-hidden="true">📺</span> TV Guide
+      </button>
+      <button type="button" class="tab-btn" id="tab-cinema" data-tab="cinema" role="tab" aria-selected="false" aria-controls="tab-panel-cinema">
+        <span class="tab-btn-icon" aria-hidden="true">🎬</span> Cinema
+      </button>
+    </div>
+  </nav>
 
   <!-- Main Content -->
   <main class="main">
@@ -64,9 +78,23 @@
                 name="epgUrl"
                 class="form-input"
                 placeholder="http://example.com/epg.xml.gz"
-                required
               >
-              <p class="form-help">Enter the URL to your gzipped EPG XML file. The URL will be stored in your browser.</p>
+              <p class="form-help">Enter the URL to your gzipped EPG XML file. Required for TV Guide tab.</p>
+            </div>
+
+            <!-- Cinema M3U URL -->
+            <div class="form-group">
+              <label for="cinemaUrl" class="form-label">
+                Cinema M3U URL
+              </label>
+              <input
+                type="url"
+                id="cinemaUrl"
+                name="cinemaUrl"
+                class="form-input"
+                placeholder="http://example.com/cinema/index.m3u"
+              >
+              <p class="form-help">Enter the URL to your online cinema M3U playlist. Used in the Cinema tab.</p>
             </div>
             
             <!-- Fuzzy Search Settings -->
@@ -132,6 +160,7 @@
       </section>
 
       <!-- Search and Filter Section -->
+      <div id="tab-panel-tv-guide" class="tab-panel" role="tabpanel" aria-labelledby="tab-tv-guide" aria-hidden="false">
       <section class="filter-controls mb-xl">
         <div class="form-group">
           <label for="searchInput" class="form-label">Search Programs</label>
@@ -301,6 +330,137 @@
           </div>
         </div>
       </section>
+      </div><!-- end tab-panel-tv-guide -->
+
+      <!-- Cinema Tab Panel -->
+      <div id="tab-panel-cinema" class="tab-panel" role="tabpanel" aria-labelledby="tab-cinema" aria-hidden="true" style="display: none;">
+
+        <!-- Cinema Search -->
+        <section class="filter-controls mb-xl">
+          <div class="cinema-search-row">
+            <div class="form-group">
+              <label for="cinemaSearchInput" class="form-label">Search Cinema</label>
+              <div class="search-input-wrapper">
+                <span class="search-input-icon" aria-hidden="true">🔍</span>
+                <input
+                  type="text"
+                  id="cinemaSearchInput"
+                  class="form-input search-input"
+                  placeholder="Search movies and series..."
+                >
+                <button type="button" class="search-input-clear" id="cinemaClearSearch" style="display: none;" aria-label="Clear search">
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cinema Filters -->
+          <div class="cinema-filters">
+            <div class="cinema-filter-group">
+              <label for="cinemaCategorySelect">Category</label>
+              <select id="cinemaCategorySelect" class="form-select form-select-compact">
+                <option value="all">All Categories</option>
+              </select>
+            </div>
+
+            <div class="cinema-filter-group">
+              <label for="cinemaRatingFilter">Min Rating: <span id="cinemaRatingValue">Any</span></label>
+              <input
+                type="range"
+                id="cinemaRatingFilter"
+                min="0"
+                max="9"
+                step="0.5"
+                value="0"
+                class="form-range"
+              >
+            </div>
+
+            <div class="cinema-filter-group">
+              <label for="cinemaYearMin">Year From</label>
+              <select id="cinemaYearMin" class="form-select form-select-compact">
+                <option value="">Any</option>
+              </select>
+            </div>
+
+            <div class="cinema-filter-group">
+              <label for="cinemaYearMax">Year To</label>
+              <select id="cinemaYearMax" class="form-select form-select-compact">
+                <option value="">Any</option>
+              </select>
+            </div>
+
+            <div class="cinema-filter-group">
+              <label for="cinemaSortSelect">Sort By</label>
+              <select id="cinemaSortSelect" class="form-select form-select-compact">
+                <option value="added-desc">Newest Added</option>
+                <option value="rating-desc">Rating (High → Low)</option>
+                <option value="year-desc">Year (New → Old)</option>
+                <option value="year-asc">Year (Old → New)</option>
+                <option value="title-asc">Title (A-Z)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex-between">
+            <button type="button" class="btn btn-primary" id="cinemaSearchButton">
+              Search
+            </button>
+            <button type="button" class="btn btn-outline" id="loadCinemaButton">
+              Load Cinema Data
+            </button>
+          </div>
+        </section>
+
+        <!-- Cinema Loading State -->
+        <div id="cinemaLoadingState" class="card text-center" style="display: none;">
+          <div class="card-body">
+            <p>Loading cinema catalog...</p>
+            <p class="text-small text-light">This may take a moment</p>
+          </div>
+        </div>
+
+        <!-- Cinema Error State -->
+        <div id="cinemaErrorState" class="card" style="display: none;">
+          <div class="card-body">
+            <h3 class="card-title">Error</h3>
+            <p id="cinemaErrorMessage" class="card-description"></p>
+          </div>
+        </div>
+
+        <!-- Cinema No Data State -->
+        <div id="cinemaNoDataState" class="card text-center">
+          <div class="card-body">
+            <h3 class="card-title">No Cinema Data Loaded</h3>
+            <p class="card-description mb-lg">Configure your Cinema M3U URL in settings, then click "Load Cinema Data".</p>
+          </div>
+        </div>
+
+        <!-- Cinema Data Loaded Info -->
+        <div id="cinemaDataLoaded" class="card" style="display: none;"></div>
+
+        <!-- Cinema Results Section -->
+        <section id="cinemaResultsSection" style="display: none;">
+          <div class="cinema-results-header">
+            <h2 class="results-title">Cinema Results</h2>
+            <p id="cinemaResultsCount" class="cinema-results-count"></p>
+          </div>
+
+          <div id="cinemaResultsContainer" class="cinema-grid">
+            <!-- Cinema cards will be dynamically inserted here -->
+          </div>
+
+          <!-- No Results -->
+          <div id="cinemaNoResults" class="card text-center" style="display: none;">
+            <div class="card-body">
+              <h3 class="card-title">No Results Found</h3>
+              <p class="card-description">Try adjusting your search or filter criteria.</p>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- end tab-panel-cinema -->
 
     </div>
   </main>

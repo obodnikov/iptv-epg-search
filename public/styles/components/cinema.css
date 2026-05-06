@@ -1,0 +1,271 @@
+/* cinema.css - Cinema Tab Styles */
+
+/* ========================================
+   Cinema Filter Controls
+   ======================================== */
+
+.cinema-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  align-items: flex-end;
+  margin-bottom: var(--space-xl);
+}
+
+.cinema-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.cinema-filter-group label {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+}
+
+.cinema-filter-group select,
+.cinema-filter-group input[type="range"] {
+  min-width: 120px;
+}
+
+.cinema-rating-display {
+  font-size: var(--font-size-small);
+  color: var(--sqowe-light-purple);
+  font-weight: var(--font-medium);
+  min-width: 32px;
+  text-align: center;
+}
+
+/* ========================================
+   Cinema Results Grid
+   ======================================== */
+
+.cinema-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-lg);
+}
+
+/* ========================================
+   Cinema Card
+   ======================================== */
+
+.cinema-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  transition: all var(--transition-normal);
+}
+
+.cinema-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.cinema-card:focus-visible {
+  outline: 2px solid var(--sqowe-light-purple);
+  outline-offset: 2px;
+}
+
+/* ========================================
+   Cinema Card Poster
+   ======================================== */
+
+.cinema-card-poster {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cinema-card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--transition-normal);
+}
+
+.cinema-card:hover .cinema-card-poster img {
+  transform: scale(1.05);
+}
+
+.cinema-card-poster.poster-error img {
+  display: none;
+}
+
+.cinema-card-poster.poster-error::after {
+  content: '🎬';
+  font-size: 2rem;
+}
+
+.poster-placeholder {
+  background: var(--sqowe-dark-ground);
+}
+
+.poster-placeholder-icon {
+  font-size: 2.5rem;
+  opacity: 0.5;
+}
+
+/* ========================================
+   Cinema Card Body
+   ======================================== */
+
+.cinema-card-body {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  flex: 1;
+}
+
+.cinema-card-title {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-bold);
+  color: var(--sqowe-dark-purple);
+  margin: 0;
+  line-height: var(--line-height-tight);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cinema-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-small);
+}
+
+.cinema-card-rating {
+  color: #f5a623;
+  font-weight: var(--font-bold);
+  font-size: var(--font-size-small);
+}
+
+.cinema-card-year {
+  color: var(--sqowe-light-grey);
+  font-size: var(--font-size-small);
+}
+
+.cinema-card-category {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-sm);
+  background-color: rgba(91, 83, 119, 0.1);
+  color: var(--sqowe-dark-purple);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ========================================
+   Cinema Modal Details
+   ======================================== */
+
+.cinema-modal-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cinema-modal-details p {
+  margin: 0;
+  font-size: var(--font-size-small);
+  max-width: none;
+}
+
+.cinema-modal-description {
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-primary);
+}
+
+/* ========================================
+   Cinema Results Header
+   ======================================== */
+
+.cinema-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.cinema-results-count {
+  font-size: var(--font-size-small);
+  color: var(--sqowe-light-grey);
+}
+
+/* ========================================
+   Cinema Search Input
+   ======================================== */
+
+.cinema-search-row {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-end;
+  margin-bottom: var(--space-lg);
+}
+
+.cinema-search-row .form-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* ========================================
+   Responsive
+   ======================================== */
+
+@media (max-width: 768px) {
+  .cinema-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--space-md);
+  }
+
+  .cinema-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cinema-filter-group select {
+    width: 100%;
+  }
+
+  .cinema-search-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cinema-results-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+}
+
+@media (max-width: 480px) {
+  .cinema-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-sm);
+  }
+
+  .cinema-card-body {
+    padding: var(--space-sm);
+  }
+
+  .cinema-card-title {
+    font-size: 0.75rem;
+  }
+}

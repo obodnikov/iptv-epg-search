@@ -31,6 +31,8 @@ import {
   getSelectedChannelIds,
   updateChannelsInResults
 } from './components/channelFilter.js';
+import { initTabs } from './components/tabs.js';
+import { initCinemaTab } from './components/cinemaTab.js';
 
 // Expose performSearch globally for settings component
 window.performSearch = null; // Will be set after function definition
@@ -80,6 +82,14 @@ function init() {
   initChannelFilter({
     onSelectionChange: handleChannelSelectionChange
   });
+
+  // Initialize tabs
+  initTabs({
+    onTabChange: handleTabChange
+  });
+
+  // Initialize cinema tab
+  initCinemaTab();
 
   // Check if EPG URL is configured
   if (!hasConfiguredUrl()) {
@@ -357,6 +367,14 @@ function handleChannelSelectionChange(selectedChannelIds) {
   if (appState.currentResults.length > 0 || appState.searchQuery.length >= 2 || appState.timeFilter !== 'all') {
     performSearch();
   }
+}
+
+/**
+ * Handle tab change
+ * @param {string} tabId - Active tab identifier
+ */
+function handleTabChange(tabId) {
+  console.log('Tab changed to:', tabId);
 }
 
 /**

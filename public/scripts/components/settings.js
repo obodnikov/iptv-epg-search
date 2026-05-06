@@ -3,7 +3,7 @@
  * Manages EPG URL settings UI and interactions
  */
 
-import { saveEpgUrl, getEpgUrl, saveManualSearchOnly, getManualSearchOnly, saveFuzzySearchEnabled, getFuzzySearchEnabled, saveFuzzyThreshold, getFuzzyThreshold } from '../utils/storage.js';
+import { saveEpgUrl, getEpgUrl, saveManualSearchOnly, getManualSearchOnly, saveFuzzySearchEnabled, getFuzzySearchEnabled, saveFuzzyThreshold, getFuzzyThreshold, saveCinemaUrl, getCinemaUrl } from '../utils/storage.js';
 import {
   exportRatings,
   importRatings,
@@ -36,6 +36,9 @@ export function initSettings(callbacks = {}) {
   // Load saved URL
   loadSavedUrl();
 
+  // Load saved cinema URL
+  loadSavedCinemaUrl();
+
   // Load saved manual search preference
   loadManualSearchPreference();
 
@@ -53,6 +56,7 @@ export function initSettings(callbacks = {}) {
   cancelButton?.addEventListener('click', () => {
     hideSettings();
     loadSavedUrl();
+    loadSavedCinemaUrl();
   });
 
   // Form submission
@@ -87,6 +91,20 @@ function loadSavedUrl() {
   } else if (epgUrlInput && !epgUrlInput.value) {
     // Clear the input if no saved URL exists
     epgUrlInput.value = '';
+  }
+}
+
+/**
+ * Load saved cinema URL into form
+ */
+function loadSavedCinemaUrl() {
+  const cinemaUrlInput = document.getElementById('cinemaUrl');
+  const savedUrl = getCinemaUrl();
+
+  if (savedUrl && cinemaUrlInput) {
+    cinemaUrlInput.value = savedUrl;
+  } else if (cinemaUrlInput && !cinemaUrlInput.value) {
+    cinemaUrlInput.value = '';
   }
 }
 
@@ -171,26 +189,52 @@ export function hideSettings() {
  */
 function handleSaveSettings(onSaveCallback) {
   const epgUrlInput = document.getElementById('epgUrl');
+  const cinemaUrlInput = document.getElementById('cinemaUrl');
   const manualSearchCheckbox = document.getElementById('manualSearchOnly');
   const fuzzySearchCheckbox = document.getElementById('fuzzySearchToggle');
   const fuzzyThresholdSlider = document.getElementById('fuzzyThreshold');
-  const url = epgUrlInput?.value?.trim();
+  const url = epgUrlInput?.value?.trim() || '';
+  const cinemaUrl = cinemaUrlInput?.value?.trim();
 
-  if (!url) {
-    showError('Please enter a valid EPG URL');
+  // At least one URL must be provided
+  if (!url && !cinemaUrl) {
+    showError('Please enter at least one URL (EPG or Cinema)');
     return;
   }
 
-  // Validate URL format
-  try {
-    new URL(url);
-  } catch (error) {
-    showError('Please enter a valid URL');
-    return;
+  // Validate EPG URL format if provided
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        showError('EPG URL must use http:// or https:// protocol');
+        return;
+      }
+    } catch (error) {
+      showError('Please enter a valid EPG URL');
+      return;
+    }
   }
 
-  // Save EPG URL to localStorage
-  const urlSuccess = saveEpgUrl(url);
+  // Validate cinema URL if provided
+  if (cinemaUrl) {
+    try {
+      const parsed = new URL(cinemaUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        showError('Cinema URL must use http:// or https:// protocol');
+        return;
+      }
+    } catch (error) {
+      showError('Please enter a valid Cinema URL');
+      return;
+    }
+  }
+
+  // Save EPG URL to localStorage (or clear if empty)
+  const urlSuccess = url ? saveEpgUrl(url) : true;
+
+  // Save or clear cinema URL in localStorage
+  saveCinemaUrl(cinemaUrl || '');
 
   // Save manual search preference
   const manualSearchEnabled = manualSearchCheckbox?.checked ?? true;

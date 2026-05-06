@@ -48,10 +48,35 @@ export default async function handler(req, res) {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Set appropriate headers
-    // Note: We send the gzipped data as-is, so the client can decompress it
-    res.setHeader('Content-Type', 'application/gzip');
+    // Security: enforce content-type allowlist for untrusted upstream responses
+    // Only allow safe, non-executable types through
+    const rawType = (response.headers.get('content-type') || '').toLowerCase();
+    // Extract base media type (strip parameters like charset)
+    const mediaType = rawType.split(';')[0].trim();
+    const ALLOWED_TYPES = [
+      'application/gzip',
+      'application/x-gzip',
+      'application/octet-stream',
+      'application/xml',
+      'text/xml',
+      'text/plain',
+      'audio/x-mpegurl',
+      'audio/mpegurl',
+      'application/vnd.apple.mpegurl',
+      'application/x-mpegurl'
+    ];
+
+    // Determine safe content-type to serve (exact match only)
+    const isAllowed = ALLOWED_TYPES.includes(mediaType);
+    const contentType = isAllowed ? rawType : 'application/octet-stream';
+
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+    // Security: prevent MIME sniffing, force download for non-allowlisted types
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (!isAllowed) {
+      res.setHeader('Content-Disposition', 'attachment');
+    }
 
     // Send the buffer
     return res.send(buffer);

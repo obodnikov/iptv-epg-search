@@ -10,7 +10,10 @@ const STORAGE_KEYS = {
   FUZZY_SEARCH_ENABLED: 'iptv_fuzzy_search_enabled',
   FUZZY_THRESHOLD: 'iptv_fuzzy_threshold',
   SHOW_UNIQUE_ONLY: 'iptv_show_unique_only',
-  PREFER_HD: 'iptv_prefer_hd'
+  PREFER_HD: 'iptv_prefer_hd',
+  CINEMA_URL: 'iptv_cinema_url',
+  CINEMA_LAST_UPDATED: 'iptv_cinema_last_updated',
+  ACTIVE_TAB: 'iptv_active_tab'
 };
 
 /**
@@ -245,5 +248,107 @@ export function getPreferHD() {
   } catch (error) {
     console.error('Error retrieving prefer HD preference:', error);
     return false; // Default to show all on error
+  }
+}
+
+
+/**
+ * Save Cinema M3U URL to localStorage
+ * @param {string} url - Cinema M3U URL to save (empty string to clear)
+ * @returns {boolean} - Success status
+ */
+export function saveCinemaUrl(url) {
+  try {
+    if (typeof url !== 'string') {
+      throw new Error('Invalid URL');
+    }
+    if (url === '') {
+      localStorage.removeItem(STORAGE_KEYS.CINEMA_URL);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.CINEMA_URL, url);
+    }
+    return true;
+  } catch (error) {
+    console.error('Error saving Cinema URL:', error);
+    return false;
+  }
+}
+
+/**
+ * Get Cinema M3U URL from localStorage
+ * @returns {string|null} - Stored Cinema URL or null
+ */
+export function getCinemaUrl() {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.CINEMA_URL);
+  } catch (error) {
+    console.error('Error retrieving Cinema URL:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if Cinema URL is configured
+ * @returns {boolean} - Whether Cinema URL exists
+ */
+export function hasCinemaUrl() {
+  const url = getCinemaUrl();
+  return url !== null && url.trim().length > 0;
+}
+
+/**
+ * Save cinema last updated timestamp
+ * @param {number} timestamp - Unix timestamp
+ * @returns {boolean} - Success status
+ */
+export function saveCinemaLastUpdated(timestamp) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CINEMA_LAST_UPDATED, timestamp.toString());
+    return true;
+  } catch (error) {
+    console.error('Error saving cinema last updated timestamp:', error);
+    return false;
+  }
+}
+
+/**
+ * Get cinema last updated timestamp
+ * @returns {number|null} - Last updated timestamp or null
+ */
+export function getCinemaLastUpdated() {
+  try {
+    const timestamp = localStorage.getItem(STORAGE_KEYS.CINEMA_LAST_UPDATED);
+    return timestamp ? parseInt(timestamp, 10) : null;
+  } catch (error) {
+    console.error('Error retrieving cinema last updated timestamp:', error);
+    return null;
+  }
+}
+
+/**
+ * Save active tab preference
+ * @param {string} tabId - Active tab identifier
+ * @returns {boolean} - Success status
+ */
+export function saveActiveTab(tabId) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, tabId);
+    return true;
+  } catch (error) {
+    console.error('Error saving active tab:', error);
+    return false;
+  }
+}
+
+/**
+ * Get active tab preference
+ * @returns {string} - Active tab identifier (default: 'tv-guide')
+ */
+export function getActiveTab() {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'tv-guide';
+  } catch (error) {
+    console.error('Error retrieving active tab:', error);
+    return 'tv-guide';
   }
 }
