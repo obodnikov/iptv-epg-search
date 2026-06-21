@@ -161,3 +161,8 @@
     font-size: var(--font-size-h4);
   }
 }
+
+/* Watch Live button spacing inside the program details modal */
+.modal-watch-live {
+  margin-top: var(--space-lg);
+}

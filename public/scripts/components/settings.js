@@ -3,7 +3,7 @@
  * Manages EPG URL settings UI and interactions
  */
 
-import { saveEpgUrl, getEpgUrl, saveManualSearchOnly, getManualSearchOnly, saveFuzzySearchEnabled, getFuzzySearchEnabled, saveFuzzyThreshold, getFuzzyThreshold, saveCinemaUrl, getCinemaUrl } from '../utils/storage.js';
+import { saveEpgUrl, getEpgUrl, saveManualSearchOnly, getManualSearchOnly, saveFuzzySearchEnabled, getFuzzySearchEnabled, saveFuzzyThreshold, getFuzzyThreshold, saveCinemaUrl, getCinemaUrl, saveLiveUrl, getLiveUrl } from '../utils/storage.js';
 import {
   exportRatings,
   importRatings,
@@ -39,6 +39,9 @@ export function initSettings(callbacks = {}) {
   // Load saved cinema URL
   loadSavedCinemaUrl();
 
+  // Load saved live URL
+  loadSavedLiveUrl();
+
   // Load saved manual search preference
   loadManualSearchPreference();
 
@@ -57,6 +60,7 @@ export function initSettings(callbacks = {}) {
     hideSettings();
     loadSavedUrl();
     loadSavedCinemaUrl();
+    loadSavedLiveUrl();
   });
 
   // Form submission
@@ -105,6 +109,20 @@ function loadSavedCinemaUrl() {
     cinemaUrlInput.value = savedUrl;
   } else if (cinemaUrlInput && !cinemaUrlInput.value) {
     cinemaUrlInput.value = '';
+  }
+}
+
+/**
+ * Load saved live URL into form
+ */
+function loadSavedLiveUrl() {
+  const liveUrlInput = document.getElementById('liveUrl');
+  const savedUrl = getLiveUrl();
+
+  if (savedUrl && liveUrlInput) {
+    liveUrlInput.value = savedUrl;
+  } else if (liveUrlInput && !liveUrlInput.value) {
+    liveUrlInput.value = '';
   }
 }
 
@@ -190,11 +208,13 @@ export function hideSettings() {
 function handleSaveSettings(onSaveCallback) {
   const epgUrlInput = document.getElementById('epgUrl');
   const cinemaUrlInput = document.getElementById('cinemaUrl');
+  const liveUrlInput = document.getElementById('liveUrl');
   const manualSearchCheckbox = document.getElementById('manualSearchOnly');
   const fuzzySearchCheckbox = document.getElementById('fuzzySearchToggle');
   const fuzzyThresholdSlider = document.getElementById('fuzzyThreshold');
   const url = epgUrlInput?.value?.trim() || '';
   const cinemaUrl = cinemaUrlInput?.value?.trim();
+  const liveUrl = liveUrlInput?.value?.trim();
 
   // At least one URL must be provided
   if (!url && !cinemaUrl) {
@@ -230,11 +250,28 @@ function handleSaveSettings(onSaveCallback) {
     }
   }
 
+  // Validate live URL if provided
+  if (liveUrl) {
+    try {
+      const parsed = new URL(liveUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        showError('Live TV URL must use http:// or https:// protocol');
+        return;
+      }
+    } catch (error) {
+      showError('Please enter a valid Live TV URL');
+      return;
+    }
+  }
+
   // Save EPG URL to localStorage (or clear if empty)
   const urlSuccess = url ? saveEpgUrl(url) : true;
 
   // Save or clear cinema URL in localStorage
   saveCinemaUrl(cinemaUrl || '');
+
+  // Save or clear live URL in localStorage
+  saveLiveUrl(liveUrl || '');
 
   // Save manual search preference
   const manualSearchEnabled = manualSearchCheckbox?.checked ?? true;

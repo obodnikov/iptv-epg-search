@@ -5,6 +5,7 @@
 
 import { formatTimeRange, getProgramStatus, formatDateTime } from '../utils/epgParser.js';
 import { createRatingControl } from './ratingControl.js';
+import { sanitizeUrl, escapeAttr } from '../utils/sanitize.js';
 
 // View mode state
 let currentView = 'grid'; // 'grid' or 'list'
@@ -246,6 +247,14 @@ function showProgramModal(program) {
 
   const status = getProgramStatus(program.start, program.stop);
 
+  // Build Watch Live button if this channel has a live stream
+  const liveCh = window.appState?.liveChannels?.get(program.channelId);
+  const streamUrl = liveCh ? sanitizeUrl(liveCh.streamUrl) : null;
+  const watchLiveHtml = streamUrl
+    ? `<a href="${escapeAttr(streamUrl)}" target="_blank" rel="noopener noreferrer"
+          class="btn btn-primary modal-watch-live">&#9654; Watch Live</a>`
+    : '';
+
   modalTitle.textContent = program.title;
 
   modalBody.innerHTML = `
@@ -272,6 +281,8 @@ function showProgramModal(program) {
         <div class="modal-info-value">${formatDateTime(program.stop)}</div>
       </div>
     </div>
+
+    ${watchLiveHtml}
 
     ${program.description ? `
       <div class="modal-info-item" style="margin-top: var(--space-lg);">
