@@ -219,17 +219,45 @@ Run locally (`python3 -m http.server 8000` from `public/`, direct fetch path):
 
 ---
 
-## 5. Phase 2 — Catch‑up (past programs) — design notes only
+## 5. Phase 2 — Catch‑up (past programs) — design (verified)
 
-Not built yet; captured so Phase 1 doesn't paint us into a corner.
+Not built yet, but the two server unknowns are now **empirically confirmed** (probe of `pervyj-hd-orig`, 2026-06-21). Reuses Phase 1's `liveChannels` map and the same open‑in‑new‑tab mechanism — only the URL construction and a "▶ Catch‑up" label differ.
 
-- **When shown:** for a *past* program on a mapped channel whose `tvgRec > 0` and whose start is within `tvgRec` days. (Requires correct past/now detection → must fix or work around the timezone issue in 3.1 first.)
-- **URL (to verify):** `catchup-type="shift"` conventionally means appending `?utc={startEpochSeconds}&lutc={nowEpochSeconds}` to the channel `streamUrl`. There is no explicit `catchup-source` template in the playlist, so **verify the exact param names with one real request** before building.
-- **`utc` computation:** derive from `program.startRaw` (timezone‑aware), e.g. `Math.floor(Date.parse(isoFrom(startRaw)) / 1000)`. **Do not** use `program.start` (timezone‑naive — see 3.1).
-- **No start offset** (per decision 3.2): `utc = start` exactly.
-- **No stop:** open in a new tab and let the external player continue past the program boundary into the next program(s). This is the core fix for "stops before the finale."
-- **Verify:** whether the shift stream returns an open‑ended HLS playlist (no `#EXT-X-ENDLIST` → auto‑continues, desired) or a duration‑bounded one (would need re-request on `ended`).
-- Reuses Phase 1's `liveChannels` map and the same open‑in‑new‑tab mechanism — only the URL construction and a "▶ Catch‑up" label differ.
+### 5.1 Confirmed server behavior
+- **Catch‑up URL — ✅ confirmed:** append `?utc={programStartEpochSeconds}&lutc={nowEpochSeconds}` to the channel `streamUrl`.
+  ```
+  http://s03.wsbof.com:8080/s/6d6310b8/pervyj-hd-orig.m3u8?utc=1782055863&lutc=1782063063
+  ```
+  Evidence: requesting `utc = now−2h` returned a manifest with `#EXT-X-PROGRAM-DATE-TIME` = the requested time (≈2h before live) and segments on a `…/dvr-YYYY/MM/DD/HH/MM/…ts` archive path. The server injects per‑segment tokens into the returned manifest — nothing for the client to compute.
+- **Continuous play past the boundary — ✅ confirmed:** the catch‑up manifest has **no `#EXT-X-ENDLIST`** (rolling DVR window, `MEDIA-SEQUENCE:0` advancing). An external player keeps pulling segments and **flows through the program boundary into the next program** automatically. → No client‑side stop logic and **no duration param** needed; this *is* the "see the finale" fix (decision §3.2).
+- **Ground truth:** the DVR manifest exposes `#EXT-X-PROGRAM-DATE-TIME`, the authoritative wall‑clock of what's playing — useful insurance against the operator's ±1–3 min EPG drift.
+
+### 5.2 `utc` computation — the one real code task (timezone-correct)
+The server expects a **true UTC epoch** of the program start. `program.start` is timezone‑naive (§3.1) and must **not** be used. Derive from `program.startRaw` (which carries the `+0300` offset):
+```js
+// "20260614091000 +0300"  ->  epoch seconds (UTC)
+export function epgRawToEpochSeconds(raw) {
+  const m = String(raw).match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4})?$/);
+  if (!m) return NaN;
+  const [, Y, Mo, D, H, Mi, S, tz] = m;
+  const off = tz ? `${tz.slice(0, 3)}:${tz.slice(3)}` : 'Z';   // +0300 -> +03:00
+  return Math.floor(Date.parse(`${Y}-${Mo}-${D}T${H}:${Mi}:${S}${off}`) / 1000);
+}
+// catch-up URL:
+// `${streamUrl}?utc=${epgRawToEpochSeconds(program.startRaw)}&lutc=${Math.floor(Date.now()/1000)}`
+```
+- **No start offset** (decision §3.2): `utc = start` exactly.
+- Suggested home: `utils/epgParser.js` (alongside the other time helpers), exported for the catch‑up button.
+
+### 5.3 When the Catch‑up button shows
+- A *past* program on a mapped channel with `tvgRec > 0` whose start is within `tvgRec` (≈7) days.
+- Requires reliable past/now detection → fix or work around the timezone issue in §3.1 first (the same `epgRawToEpochSeconds` makes status reliable: compare `epgRawToEpochSeconds(stopRaw)` to `Date.now()/1000`).
+- With decision §4.3 (Option A) keeping "▶ Watch Live" on all mapped channels, a past program may show **both** "▶ Watch Live" (jump to live) and "▶ Catch‑up" (play that program). Acceptable; labels disambiguate.
+
+### 5.4 Validation checklist before/after building Phase 2
+1. **Conversion sanity:** `epgRawToEpochSeconds("20260614091000 +0300") === Date.parse("2026-06-14T06:10:00Z")/1000` (09:10 MSK = 06:10 UTC).
+2. **Ground‑truth round‑trip:** build the `?utc=` URL from a recent program's `startRaw`, fetch it, confirm the returned `#EXT-X-PROGRAM-DATE-TIME` ≈ the program's real start.
+3. **In‑player smoke test:** open a catch‑up URL for a program ending soon in the Cinema external‑player path; confirm playback continues into the next program without stopping.
 
 ---
 
@@ -249,10 +277,12 @@ Not built yet; captured so Phase 1 doesn't paint us into a corner.
 5. **Button label:** English only — `▶ Watch Live`. ✔
 6. **Button placement / CSS:** after the modal info-grid; reuse `.btn .btn-primary` with optional `.modal-watch-live` spacing. ✔
 
-### Deferred to Phase 2 (open until after Phase 1 testing)
-- Catch-up URL parameter format for `catchup-type="shift"` (needs one empirical request to confirm `?utc=&lutc=`).
-- Whether the shift stream auto-continues past the program boundary (no `#EXT-X-ENDLIST`) or is duration-bounded.
-- How to fix the `parseEpgTime` timezone issue (§3.1) so past/now detection is reliable for showing Catch-up.
+### Phase 2 — verified 2026-06-21 (see §5)
+- ✅ Catch-up URL format confirmed: `?utc={start}&lutc={now}` (server returns the `dvr-` archive at the requested time).
+- ✅ Continuous play confirmed: catch-up manifest has no `#EXT-X-ENDLIST` → external player rolls into the next program; no stop logic / duration param needed.
+- ✅ Timezone fix specified: use `epgRawToEpochSeconds(startRaw)` for `utc` (§5.2) — do **not** use the timezone-naive `program.start`.
+
+Remaining for Phase 2 implementation (no blocking unknowns): wire the helper + "▶ Catch‑up" button, gate by `tvgRec`/past-status, and run the §5.4 validation checklist.
 
 ---
 
