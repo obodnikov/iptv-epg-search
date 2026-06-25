@@ -225,6 +225,59 @@ export function getProgramStatus(start, stop) {
 }
 
 /**
+ * Convert a raw EPG time string (with timezone offset) to UTC epoch seconds.
+ * Unlike parseEpgTime(), this preserves the timezone offset for correct absolute time.
+ *
+ * The timezone offset is **required** — EPG data always includes it (e.g. "+0300").
+ * Returns NaN for missing or malformed offsets.
+ *
+ * Uses Date.UTC() + explicit offset arithmetic to avoid Date.parse()
+ * normalisation pitfalls (e.g. month 13 silently wrapping to next year).
+ *
+ * @param {string} raw - Raw EPG time string, e.g. "20260614091000 +0300"
+ * @returns {number} - UTC epoch seconds, or NaN if the format is invalid
+ */
+export function epgRawToEpochSeconds(raw) {
+  const m = String(raw).match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s+([+-]\d{4})$/);
+  if (!m) return NaN;
+
+  const Y  = parseInt(m[1], 10);
+  const Mo = parseInt(m[2], 10);
+  const D  = parseInt(m[3], 10);
+  const H  = parseInt(m[4], 10);
+  const Mi = parseInt(m[5], 10);
+  const S  = parseInt(m[6], 10);
+  const tz = m[7];
+
+  // Validate ranges before calling Date.UTC()
+  if (Mo < 1 || Mo > 12 || D < 1 || D > 31 || H > 23 || Mi > 59 || S > 59) {
+    return NaN;
+  }
+
+  // Validate timezone offset: sign + HHMM where HH ≤ 23, MM ≤ 59
+  const sign = tz[0] === '+' ? 1 : -1;
+  const offH = parseInt(tz.slice(1, 3), 10);
+  const offM = parseInt(tz.slice(3, 5), 10);
+  if (isNaN(offH) || isNaN(offM) || offH > 23 || offM > 59) {
+    return NaN;
+  }
+  const offsetMs = sign * (offH * 3600 + offM * 60) * 1000;
+
+  // Build UTC milliseconds via Date.UTC (month is 0-indexed).
+  // Date.UTC normalises out-of-range values (e.g. month=13 ▶ year+1), so
+  // cross-check the resulting UTC components against the original inputs.
+  const utcMs = Date.UTC(Y, Mo - 1, D, H, Mi, S);
+  const d0 = new Date(utcMs);
+  if (d0.getUTCFullYear() !== Y || d0.getUTCMonth() + 1 !== Mo ||
+      d0.getUTCDate() !== D || d0.getUTCHours() !== H ||
+      d0.getUTCMinutes() !== Mi || d0.getUTCSeconds() !== S) {
+    return NaN;
+  }
+
+  return Math.floor((utcMs - offsetMs) / 1000);
+}
+
+/**
  * Analyze EPG XML to discover available fields and their usage
  * @param {string} xmlString - XML string to analyze
  * @returns {Object} - Analysis results with field statistics

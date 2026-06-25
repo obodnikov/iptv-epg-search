@@ -3,8 +3,9 @@
  * Handles displaying search results in the UI
  */
 
-import { formatTimeRange, getProgramStatus, formatDateTime } from '../utils/epgParser.js';
+import { formatTimeRange, getProgramStatus, formatDateTime, epgRawToEpochSeconds } from '../utils/epgParser.js';
 import { createRatingControl } from './ratingControl.js';
+import { sanitizeUrl, escapeAttr } from '../utils/sanitize.js';
 
 // View mode state
 let currentView = 'grid'; // 'grid' or 'list'
@@ -246,6 +247,55 @@ function showProgramModal(program) {
 
   const status = getProgramStatus(program.start, program.stop);
 
+  // Build Watch Live button if this channel has a live stream
+  const liveCh = window.appState?.liveChannels?.get(program.channelId);
+  const streamUrl = liveCh ? sanitizeUrl(liveCh.streamUrl) : null;
+  const watchLiveHtml = streamUrl
+    ? `<a href="${escapeAttr(streamUrl)}" target="_blank" rel="noopener noreferrer"
+          class="btn btn-primary modal-watch-live">&#9654; Watch Live</a>`
+    : '';
+
+  // Build Catch-up button for past programs on DVR-enabled channels.
+  // Uses the server's confirmed catch-up API (see docs/design/live-tv-playback-plan.md §5.1):
+  //   {streamUrl}?utc={startEpoch}&lutc={nowEpoch}
+  // - utc: the program's true start epoch (from timezone-correct startRaw)
+  // - lutc: the current live point — empirically tested; the server uses the
+  //   delta to position the DVR window and the manifest has no #EXT-X-ENDLIST,
+  //   so the external player rolls continuously into the next program (§3.2).
+  //   NOTE: lutc uses client clock (Date.now()); significant clock skew may
+  //   affect DVR positioning. A server time endpoint would be more robust
+  //   but is not yet available in the current architecture.
+  let catchupHtml = '';
+  if (liveCh && liveCh.tvgRec > 0 && streamUrl && program.startRaw && program.stopRaw) {
+    const startEpoch = epgRawToEpochSeconds(program.startRaw);
+    const stopEpoch = epgRawToEpochSeconds(program.stopRaw);
+    const nowEpoch = Math.floor(Date.now() / 1000);
+
+    // Show Catch-up only for past programs whose start is within the archive window.
+    // Use integer seconds comparison to avoid floating‑point boundary edge‑cases.
+    const archiveWindowSec = liveCh.tvgRec * 86400;
+    if (!isNaN(startEpoch) && !isNaN(stopEpoch)
+        && stopEpoch < nowEpoch
+        && (nowEpoch - startEpoch) <= archiveWindowSec) {
+      // Build URL safely: use URL API to preserve any existing query params on the stream URL.
+      // sanitizeUrl already blocks non-http(s) schemes; wrap new URL() in try/catch
+      // in case the stream URL is malformed (prevents modal rendering breakage).
+      let catchupUrl = null;
+      try {
+        const u = new URL(streamUrl, window.location.href);
+        u.searchParams.set('utc', startEpoch);
+        u.searchParams.set('lutc', nowEpoch);
+        catchupUrl = sanitizeUrl(u.href);
+      } catch {
+        // Malformed stream URL — leave catchupUrl null (button won't render)
+      }
+      if (catchupUrl) {
+        catchupHtml = `<a href="${escapeAttr(catchupUrl)}" target="_blank" rel="noopener noreferrer"
+              class="btn btn-secondary modal-catch-up">&#9654; Catch&#8209;up</a>`;
+      }
+    }
+  }
+
   modalTitle.textContent = program.title;
 
   modalBody.innerHTML = `
@@ -272,6 +322,10 @@ function showProgramModal(program) {
         <div class="modal-info-value">${formatDateTime(program.stop)}</div>
       </div>
     </div>
+
+    ${watchLiveHtml}
+
+    ${catchupHtml}
 
     ${program.description ? `
       <div class="modal-info-item" style="margin-top: var(--space-lg);">
