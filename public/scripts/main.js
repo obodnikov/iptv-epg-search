@@ -33,6 +33,7 @@ import {
 } from './components/channelFilter.js';
 import { initTabs } from './components/tabs.js';
 import { initCinemaTab } from './components/cinemaTab.js';
+import { loadLiveChannels } from './utils/liveChannels.js';
 
 // Expose performSearch globally for settings component
 window.performSearch = null; // Will be set after function definition
@@ -53,7 +54,8 @@ window.appState = {
   manualSearchOnly: true, // Manual search only mode (default: true)
   selectedChannels: null, // Selected channel IDs for filtering (null = all channels)
   showUniqueOnly: getShowUniqueOnly(), // Show only unique programs by title+channel (closest to current time)
-  preferHD: getPreferHD() // Prefer HD channels over SD/regular (deduplicates by title+time, keeps highest quality)
+  preferHD: getPreferHD(), // Prefer HD channels over SD/regular (deduplicates by title+time, keeps highest quality)
+  liveChannels: null // Map<tvg-id, LiveChannel> loaded from Live TV M3U — null until loaded
 };
 
 const appState = window.appState;
@@ -526,6 +528,9 @@ async function loadEpgData() {
 
     // Update Best Match option availability (now that index is ready)
     updateBestMatchOption();
+
+    // Load live channels non-blocking (fire-and-forget — EPG UI is already shown)
+    loadLiveChannels();
 
     console.log('EPG data loaded successfully');
   } catch (error) {

@@ -406,3 +406,41 @@ export function groupSeriesEpisodes(items) {
 
   return { films, series };
 }
+
+/**
+ * Parse a live-channel M3U playlist into a Map keyed by tvg-id.
+ * Handles standard IPTV playlists (tvg-id, tvg-logo, tvg-rec, stream URL).
+ * Does not modify the existing parseM3u / cinema path.
+ *
+ * @param {string} text - Raw M3U text content
+ * @returns {Map<string, {tvgId: string, name: string, streamUrl: string, logo: string, tvgRec: number}>}
+ */
+export function parseLiveM3u(text) {
+  const map = new Map();
+  const lines = text.split('\n');
+  let cur = null;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+
+    if (!line || line.startsWith('#EXTM3U') || line.startsWith('#EXTGRP')) continue;
+
+    if (line.startsWith('#EXTINF:')) {
+      const content = line.substring(8);
+      const tvgId = (content.match(/tvg-id="([^"]*)"/) || [])[1] || '';
+      const logo  = (content.match(/tvg-logo="([^"]*)"/) || [])[1] || '';
+      const rec   = parseInt((content.match(/tvg-rec="([^"]*)"/) || [])[1], 10) || 0;
+      const comma = content.lastIndexOf(',');
+      const name  = comma !== -1 ? content.substring(comma + 1).trim() : '';
+      cur = { tvgId, name, logo, tvgRec: rec, streamUrl: '' };
+    } else if (!line.startsWith('#') && cur) {
+      cur.streamUrl = line;
+      if (cur.tvgId) {
+        map.set(cur.tvgId, cur);
+      }
+      cur = null;
+    }
+  }
+
+  return map;
+}

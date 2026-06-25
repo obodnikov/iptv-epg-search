@@ -13,6 +13,8 @@ const STORAGE_KEYS = {
   PREFER_HD: 'iptv_prefer_hd',
   CINEMA_URL: 'iptv_cinema_url',
   CINEMA_LAST_UPDATED: 'iptv_cinema_last_updated',
+  LIVE_URL: 'iptv_live_url',
+  LIVE_LAST_UPDATED: 'iptv_live_last_updated',
   ACTIVE_TAB: 'iptv_active_tab'
 };
 
@@ -350,5 +352,78 @@ export function getActiveTab() {
   } catch (error) {
     console.error('Error retrieving active tab:', error);
     return 'tv-guide';
+  }
+}
+
+/**
+ * Save Live TV M3U URL to localStorage
+ * @param {string} url - Live M3U URL to save (empty string to clear)
+ * @returns {boolean} - Success status
+ */
+export function saveLiveUrl(url) {
+  try {
+    if (typeof url !== 'string') {
+      throw new Error('Invalid URL');
+    }
+    if (url === '') {
+      localStorage.removeItem(STORAGE_KEYS.LIVE_URL);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.LIVE_URL, url);
+    }
+    return true;
+  } catch (error) {
+    console.error('Error saving Live URL:', error);
+    return false;
+  }
+}
+
+/**
+ * Get Live TV M3U URL from localStorage
+ * @returns {string|null} - Stored Live URL or null
+ */
+export function getLiveUrl() {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.LIVE_URL);
+  } catch (error) {
+    console.error('Error retrieving Live URL:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if Live URL is configured
+ * @returns {boolean} - Whether Live URL exists
+ */
+export function hasLiveUrl() {
+  const url = getLiveUrl();
+  return url !== null && url.trim().length > 0;
+}
+
+/**
+ * Save live channels last updated timestamp
+ * @param {number} timestamp - Unix timestamp
+ * @returns {boolean} - Success status
+ */
+export function saveLiveLastUpdated(timestamp) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.LIVE_LAST_UPDATED, timestamp.toString());
+    return true;
+  } catch (error) {
+    console.error('Error saving live last updated timestamp:', error);
+    return false;
+  }
+}
+
+/**
+ * Get live channels last updated timestamp
+ * @returns {number|null} - Last updated timestamp or null
+ */
+export function getLiveLastUpdated() {
+  try {
+    const timestamp = localStorage.getItem(STORAGE_KEYS.LIVE_LAST_UPDATED);
+    return timestamp ? parseInt(timestamp, 10) : null;
+  } catch (error) {
+    console.error('Error retrieving live last updated timestamp:', error);
+    return null;
   }
 }
