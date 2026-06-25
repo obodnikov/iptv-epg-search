@@ -82,5 +82,5 @@ ENV/
 .suo
 
 .kiro/
-.agents/
 .pi/
+.agents/
