@@ -80,3 +80,7 @@ ENV/
 *.swp
 *.backup
 .suo
+
+.kiro/
+.pi/
+.agents/
