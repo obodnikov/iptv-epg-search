@@ -84,3 +84,5 @@ ENV/
 .kiro/
 .pi/
 .agents/
+
+.index/
