@@ -1,8 +1,8 @@
 # IPTV MCP Servers (TV Guide + Cinema) — Design & Implementation Plan
 
-**Status:** Proposed. Design agreed in discussion on 2026-10-25. **Phase 0 and phase C1 are done
-(2026-10-27)**: the scaffolding, the shared base and the Cinema catalogue parser. Cinema first;
-the TV Guide server follows.
+**Status:** Proposed. Design agreed in discussion on 2026-10-25. **Phase 0 and the phases C1
+and C2 are done (2026-10-27)**: the scaffolding, the shared base, the Cinema catalogue parser
+and the Cinema storage with the import. Cinema first; the TV Guide server follows.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Location:** `mcp-servers/` in the `iptv-epg-search` repository. A separate product that lives
@@ -196,6 +196,13 @@ mcp-servers/
 | `countries.ts` | country names in any language → ISO 3166-1 alpha-2 (used by both servers) |
 | `tool-kit.ts` | shared result shape: compact text + `structuredContent`, `isError` with a recovery hint, cursor encoding |
 
+**State of the modules (2026-10-27):** `args`, `settings`, `log`, `download`, `m3u`, `text`,
+`time`, `db`, `links`, `countries` and the hash of the servers are done. Three more were added
+while the Cinema server was built: `hash.ts` (the sha256 of the servers), `lock.ts` (the
+refresh lock of the working folder) and `permissions.ts` (the rights of the files). `refresh.ts`
+is split: the **lock** is done (C2), the schedule and the progress come with the tools (C3).
+`embeddings.ts`, `search.ts` and `tool-kit.ts` come with C3 and C4.
+
 ### 4.4 Movability rule
 
 Nothing outside `mcp-servers/` imports from it, and it imports nothing from outside except its
@@ -324,6 +331,10 @@ heavier than description, as the web app weights title 2 and description 1,
 3. If the sha256 equals the previous download, only update `fetched_at`.
 4. Otherwise import into staging tables in one transaction, then swap them in. Readers keep
    seeing the old data until the swap.
+   **Cinema (C2) does it in one transaction on the live tables**, with a staging table that
+   holds the titles of the running import: the readers keep seeing the old data until the
+   transaction is committed, and the foreign keys and the shadow tables of the keyword index
+   stay untouched (cinema-server.md §9 C2).
 5. Embed the new text hashes in batches. Search uses vectors as they arrive.
 6. Release the lock and record the result (counts, duration, error) in `meta`.
 
@@ -516,7 +527,10 @@ Invariants. A change that breaks any of these is rejected:
 3. Meaning of the `⋗` prefix in 1,107 EPG titles ([tv-guide-server.md](tv-guide-server.md) §2.3).
 4. Source of the catalogue's `rating` (scale 0–10; provider does not say).
 5. Whether Pilot shows `structuredContent` or only `content` (both are sent either way).
-6. Real sizes and timings: measured in C2 and T1, then recorded here.
+6. Real sizes and timings: **Cinema measured in C2** — the import of the 67,088 entries of
+   `tmp/index.m3u` takes **2.9 s** into an empty database and **1.0 s** when nothing changed;
+   `data.sqlite` is **44.1 MB** with 7,270 titles, 6,301 variants and 60,658 episodes
+   (cinema-server.md §9 C2). The TV Guide is measured in T1.
 
 ## 14. Non-goals
 

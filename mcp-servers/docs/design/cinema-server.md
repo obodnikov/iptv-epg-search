@@ -1,8 +1,8 @@
 # Cinema MCP Server — Design & Implementation Plan
 
-**Status:** In progress. **First server to implement.** Phase 0 and C1 are done (2026-10-27):
-the shared base and the catalogue parser, with the measured numbers of §2.3. The MCP server
-itself comes in C3.
+**Status:** In progress. **First server to implement.** Phase 0, C1 and C2 are done (2026-10-27):
+the shared base, the catalogue parser and the storage with the import, with the measured
+numbers of §2.3 and §9. The MCP server itself comes in C3.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -98,6 +98,13 @@ same file; these are the measured values:
 | Episode length | 4 … 600 min | the `duration` attribute is **minutes** ✓ |
 | Parse time | 0.4 s | 54 MB of text, single pass |
 
+Two clarifications of the numbers above, measured on 2026-10-27:
+
+- The file is **80,954,706 bytes**; the "54 MB of text" of the table are the 54,373,653
+  characters of the file, the rest is the UTF-8 of the Cyrillic text.
+- The 583 films with several variants are 583 *(title, year)* pairs, but only **582** different
+  normalised titles: one of them is in the catalogue in two years.
+
 ---
 
 ## 3. Data model
@@ -125,7 +132,11 @@ CREATE TABLE IF NOT EXISTS titles (
   text_hash     TEXT,                 -- hash of the embedding text (§5)
   first_seen_at INTEGER NOT NULL,
   last_seen_at  INTEGER NOT NULL,
-  removed_at    INTEGER               -- set when absent from the latest catalogue
+  removed_at    INTEGER,              -- set when absent from the latest catalogue
+  lookup_key    TEXT NOT NULL,        -- film|<title_norm>|<year> | series|<title_norm>
+  content_hash  TEXT,                 -- hash over the whole row set of the title
+  added_raw     TEXT,                 -- the provider's own "added" string
+  embed_text    TEXT                  -- the text that is embedded (§5)
 );
 
 CREATE TABLE IF NOT EXISTS title_genres (
@@ -171,11 +182,45 @@ CREATE VIRTUAL TABLE IF NOT EXISTS titles_fts USING fts5(
 CREATE INDEX IF NOT EXISTS idx_titles_type_year ON titles(type, year);
 CREATE INDEX IF NOT EXISTS idx_titles_rating    ON titles(rating);
 CREATE INDEX IF NOT EXISTS idx_titles_added     ON titles(added_at);
+CREATE INDEX IF NOT EXISTS idx_titles_lookup    ON titles(lookup_key);
+CREATE INDEX IF NOT EXISTS idx_titles_removed   ON titles(removed_at);
 CREATE INDEX IF NOT EXISTS idx_genres_genre     ON title_genres(genre);
 CREATE INDEX IF NOT EXISTS idx_countries_code   ON title_countries(code);
+
+-- The titles of the running import. A title that is not in this table did
+-- not come back from the provider.
+CREATE TABLE IF NOT EXISTS import_staging (
+  title_id TEXT PRIMARY KEY
+);
+
+-- The texts the active model has not embedded yet.
+CREATE TABLE IF NOT EXISTS vector_queue (
+  text_hash TEXT NOT NULL,
+  model     TEXT NOT NULL,
+  queued_at INTEGER NOT NULL,
+  PRIMARY KEY (text_hash, model)
+);
 ```
 
 `bm25(titles_fts, 0, 3.0, 1.5, 1.0)`: title weighs most, then people, then description.
+
+### 3.1.1 Four columns and two tables that the schema of §3.1 needed (phase C2)
+
+The shape above is the one the design described. The implementation added four columns and
+two tables, each of them for a rule the design asks for elsewhere:
+
+| Addition | Why |
+| --- | --- |
+| `titles.lookup_key` | §3.2 derives the id from a hash, but §11.7 wants the importer to *"look the title up by its type and its normalised title and keep the id the row already has"*, so that the id of a series never drifts when its earliest episode year changes. A hash cannot be that lookup key. The key is `film\|<title_norm>\|<year>` for a film and `series\|<title_norm>` for a series. The index over it is a **unique** one: two rows with the same key would send the rows of a new catalogue to the wrong title, so the import has to fail instead of that. |
+| `titles.content_hash` | §4 step 7 rebuilds the variant, episode, genre and country rows of the **changed** titles. The hash over the whole row set of a title is what says "changed". |
+| `titles.added_raw` | The parent document (§6.1) keeps the raw source string next to the time. The parser already reads it. |
+| `titles.embed_text` | The text that is embedded. Without it the embedding run would have to rebuild the text from the columns of the title, and the rebuilt text would not be the one the hash was made of. |
+| `import_staging` | The set of the titles of the running import. The titles that are not in it are the ones that left the catalogue; the removals are one SQL statement over this table. |
+| `vector_queue` | The texts the active model has not embedded yet. The queue is per model: when the model of the settings changes, the queue of the new model is built again and the old one is dropped. |
+
+The keyword index holds the **stemmed** text (§6.3 of the parent document). The name of a
+title is therefore read from the `titles` table, not from `titles_fts`. The rowid of a row of
+`titles_fts` is the rowid of the row of `titles`, so that the two can be joined.
 
 ### 3.2 Stable ids
 
@@ -185,6 +230,24 @@ title, [m3uParser.js:314-316](../../../public/scripts/utils/m3uParser.js#L314-L3
 year is the earliest one. Ids survive refreshes, so a title the model mentioned yesterday can
 still be opened. If two different films collide (same title and year), the import logs it and
 appends the director to the hash input for both.
+
+**How the id is kept (phase C2).** The id is a hash, but a hash cannot answer *"which row is
+this title?"* — the year of a series may change. So the importer looks the title up by its
+`lookup_key` (§3.1.1) first:
+
+1. a row with that key is there → the title keeps the id of that row;
+2. no row with that key → the id is the hash of the seed;
+3. that id is already held by another row → **collision**: the import logs the pair and
+   appends the director (or, when it is empty, the category or the genres) to the hash input
+   for both titles, so that neither of them holds the id they both wanted.
+
+Rule 1 is what keeps the id of a series stable when an earlier episode changes its earliest
+year (§11.7). The sample has no such case: the ids of all 7,270 titles are the same after the
+first and the second import.
+
+When two titles of **one** import want the same id, the first one is moved to another id and
+the staging table of the running import follows it. A title that was staged under the old id
+would otherwise look like a title that left the catalogue.
 
 ### 3.3 Genres and provider tags
 
@@ -243,14 +306,20 @@ The genre "Взрослые" ("for grown-ups") is **not** an adult marker: its 5
 5. **Group**: series consolidation (web app rules, §2.2), de-duplicated episodes; film quality
    variants (§3.5).
 6. **Normalise**: genres and tags, countries, rating, `added` with offset, durations, adult
-   flag, `title_norm`.
-7. **Write** into staging tables in one transaction; compute `text_hash`. Then swap:
-   - upsert `titles` by `title_id`, keeping `first_seen_at`;
-   - set `last_seen_at`;
-   - set `removed_at` for titles not seen this time (`trackChanges`);
-   - rebuild the variant, episode, genre and country rows of changed titles;
-   - rebuild `titles_fts`.
-8. **Queue vectors** for `text_hash` values the active model has not embedded yet.
+   flag, `title_norm`, the embedding text and its hash, the content hash of the title.
+7. **Write in one transaction** (phase C2): the whole write is one transaction, so a reader
+   keeps seeing the old catalogue until it is committed, and a failed import leaves the old
+   catalogue untouched.
+   - the id of every title is resolved (§3.2): the id of the row that is already there is
+     kept;
+   - the titles are written; `first_seen_at` is kept, `last_seen_at` is set, `removed_at` is
+     cleared;
+   - the variant, episode, genre and country rows of the **changed** titles are written
+     again; the title row of every title is written, because `last_seen_at` changes;
+   - the row of the keyword index is written again when the text of the title changed;
+   - the titles that are not in `import_staging` get a `removed_at`, or are deleted when
+     `trackChanges` is off;
+   - the queue rows of the texts that left the catalogue are removed.8. **Queue vectors** for `text_hash` values the active model has not embedded yet.
 
 ---
 
@@ -453,8 +522,8 @@ housekeeping) is in [iptv-mcp-servers.md](iptv-mcp-servers.md) §9.
   - an entry without a stream line; a BOM before `#EXTM3U`.
 - Real-data script on `tmp/index.m3u` prints counts to compare with §2.2. Settle the open
   points: `rating="0"`, genre "Взрослые", the country table.
-- What was built: `src/shared/{args,countries,country-table,download,links,log,m3u,settings,text,time}.ts`
-  and `src/cinema/{parser,catalog}.ts`, with 119 tests in `tests/` and
+- What was built: `src/shared/{args,countries,country-table,download,hash,links,log,log-level,m3u,permissions,settings,text,time}.ts`
+  and `src/cinema/{parser,catalog}.ts`, with 217 tests in `tests/` and
   `scripts/check-real-data.ts`. The measured numbers are in §2.3.
 - Two deviations from this document, both forced by the real data:
   - the title is split at the last comma **outside** the quoted attribute values, so that
@@ -469,15 +538,142 @@ housekeeping) is in [iptv-mcp-servers.md](iptv-mcp-servers.md) §9.
 - The episode pattern is the one of the web app, unchanged. Of the sample, **no** title looks
   like an episode and still fails the pattern, so the pattern was not loosened.
 
-**C2 — Storage and import.**
-- Schema, staging and swap, stable ids, `first_seen` / `removed`, FTS with stemmed text,
-  vector queue.
-- Tests:
+**C2 — Storage and import.** *(done 2026-10-27)*
+- What was built:
+  - `src/shared/db.ts` — the database: `node:sqlite`, the `sqlite-vec` extension, WAL, foreign
+    keys on, the `meta` table with the schema version, the vectors file attached as `vec`,
+    idempotent column migrations, and the transaction helper;
+  - `src/shared/lock.ts` — the refresh lock of the working folder; a lock older than an hour
+    counts as stale;
+  - `src/shared/hash.ts` — the sha256 of the servers (the one of `download.ts` moved here);
+  - `src/cinema/schema.ts` — the tables of §3.1 and the four columns and two tables of
+    §3.1.1;
+  - `src/cinema/embed-text.ts` — the text of §5;
+  - `src/cinema/keys.ts` — the lookup key, the seed, the id and the hashes;
+  - `src/cinema/identity.ts` — the resolution of the id, the lookup by the lookup key and the
+    collision path;
+  - `src/cinema/store.ts` — the write path: the upsert, the rows of the title, the keyword
+    index and the removals;
+  - `src/cinema/queue.ts` — the queue of the texts that have to be embedded;
+  - `src/cinema/import.ts` — the pipeline of §4, from the download to the write;
+  - `scripts/import-real-data.ts` — the import of a real catalogue with the numbers of this
+    phase.
+- Tests, on fixtures (`tests/cinema/import.test.ts`, `tests/shared/db.test.ts`,
+  `tests/shared/lock.test.ts`):
   - importing twice gives the same ids and no duplicates;
   - a title missing from the second import gets `removed_at`;
   - FTS finds other word forms ("убийства" for "убийство");
   - the id collision path.
-- Measure and record here: import time and `data.sqlite` size on `tmp/index.m3u`.
+  - and: the write is atomic (a broken title leaves the old catalogue untouched); the
+    excluded categories are not loaded; the adult titles are stored and marked; one row per
+    country of a list, with the code and with the aliases of the settings; the episodes and
+    the variants are written; the series keeps its id when its earliest year changes;
+    `first_seen_at` is kept; `trackChanges: false` deletes the titles that left and keeps
+    `first_seen_at` of the rest; the keyword index has one row per title and is written again
+    when the text changes; the queue holds the new texts, holds no text twice and drops the
+    texts that left; the lock is taken, given back and taken over when it is stale, and a
+    release never removes a lock that is not its own; the database can be opened read-only, and
+    the write-ahead log, the shared memory file and the vectors file are readable for their
+    owner only.
+- **Measured on `tmp/index.m3u` (2026-10-27):**
+
+  | Fact | Value |
+  | --- | --- |
+  | Import time, empty database | **2.9 s** (67,088 entries read, 1 rejected, 2 without a stream line) |
+  | Import time, nothing changed | **1.0 s** (the change detection keeps the rows of the titles that did not change) |
+  | `data.sqlite` | **44.1 MB** |
+  | Titles | 7,270 (5,717 films, 1,553 series) |
+  | Variants / episodes | 6,301 / 60,658 |
+  | Genre rows / country rows | 10,019 / 9,216 (143 country names, all mapped) |
+  | Rows of the keyword index | 7,270 |
+  | Texts to embed | 7,261 (9 titles have a text shorter than `embeddings.minTextChars`) |
+
+- Two decisions that the design left open, taken in C2:
+  - the removals are **one transaction on the live tables**, not a swap of tables (§4 step 7):
+    the readers keep seeing the old catalogue until the transaction is committed, and the
+    foreign keys and the shadow tables of the keyword index stay untouched. The `import_staging`
+    table holds the titles of the running import;
+  - the **queue of the texts to embed is a table** (`vector_queue`), per model. It is filled
+    by the import, it is pruned when the texts leave the catalogue, and it is built again when
+    the model of the settings changes.
+- The review of 2026-10-27 found eight issues; they were all fixed:
+  - a title that was moved to another id (the collision path) was still in the staging table
+    under the old id, so it looked like a title that left the catalogue. The staging table
+    follows the id now, and the case of **two titles of one import** that want the same id is
+    covered by a test;
+  - the write-ahead log and the shared memory file of the database were created with the
+    rights of the process, and the log holds the same data as the database. They are made
+    private after every write now, and so is the vectors file;
+  - a lock that was taken over by another process could be removed by the release of the
+    process that held it before. The release only removes the file when it still belongs to
+    the handle;
+  - a database that was opened read-only could not be opened at all: the connection tried to
+    write. A read-only connection changes nothing and attaches the vectors read-only;
+  - the index over the lookup key is a **unique** one now, so that a duplicate fails the
+    import instead of sending the rows of a new catalogue to the wrong title;
+  - `npm run import-real-data -- <path>` took the path of the catalogue; it did not, because
+    npm does not pass the `--` on. The first free argument is the catalogue now;
+  - the number of the queued texts is read from the queue itself, so that it is the number of
+    the rows that are really in it;
+  - the adult titles are stored and marked; the filter is a question of the search, not of the
+    import. The test now says so.
+- The second review of the same day found eight more:
+  - a write that fails (a constraint of the database, a full disk) **threw** instead of
+    answering with a failed import. Every failure of the whole path is now an
+    `ImportOutcome` with `ok: false` and a message; the transaction is still thrown back, so
+    the old catalogue stays. A test with a trigger that fails the write covers it;
+  - the collisions were collected but never written down. The import writes them to the
+    logger, and the real-data script prints them;
+  - only the download-and-refresh took the lock of the working folder; a script that imports
+    a file wrote without it. Every write path takes the lock now, when it knows the working
+    folder;
+  - the version of the schema was never written into `meta`, and a database with titles that
+    share their lookup key was quietly accepted. The version is written now, and the
+    duplicates make the schema fail with a message;
+  - the index over the lookup key is unique, and that is tested: a second row with the same
+    key is refused;
+  - a title that comes back into the catalogue keeps its id and the moment it was first seen.
+    That is tested too;
+  - after a collision the row of the keyword index follows the id of its title. That is
+    tested as well;
+  - the text of a title was measured with two different rules: the units of UTF-16 in
+    JavaScript and the characters in SQLite. The rule is one now;
+  - a test used a path that only works on Unix, and had a line that did nothing. Both are
+    fixed.
+- The third review of the same day found five more:
+  - the refresh wrote to `<working folder>/raw/catalog.m3u` but never created the folder, so
+    the first download failed with a missing folder. The folder is created by the refresh
+    itself now, and a test without it covers the case;
+  - a failure while making the files private **after** the commit could turn a written
+    catalogue into a failed import. The commit and the rights of the files are apart now: a
+    transaction that was committed is never thrown back;
+  - the lock of the working folder threw when the folder was not there. Every failure of the
+    import is an `ImportOutcome` now;
+  - the refresh and the import had two copies of the lock handling. There is one now;
+  - the test of the texts that are queued again did not empty the queue, so it passed even
+    when the queue was broken. The test is honest now.
+- The fourth review approved the phase and named five things that were not blocking; they
+  were fixed as well:
+  - a lock whose rights could not be made private was left behind without a handle to give
+    it back with, and it blocked the refresh for an hour. The lock is taken as soon as the
+    file is written;
+  - the failures of the refresh built their answer by hand, and some of them never reached
+    the log. Every failure goes through one helper now;
+  - the temporary folder of the real-data script stayed behind when the database could not
+    be opened. It is removed now;
+  - the number of the queued texts was counted twice and then overwritten. It is the number
+    of the rows in the queue, read once;
+  - a title that cannot be told apart from a thousand others ran out of ids and failed with
+    a message of the database. The id says what happened now.
+- The fifth review found one blocking thing and one test that was missing; both are fixed:
+  - a title that left the catalogue and came back later **with the same text** was not put
+    into the queue of the texts again: the text of a title that left was removed from the
+    queue with it, and a title that comes back is found by its lookup key, so neither the
+    text nor the row was new. The text of a title that comes back is queued again now;
+  - the test of the titles that come back checks the queue as well.
+
+The fifth review was the last one of the loop, so these two fixes were **not** reviewed
+again. The test suite covers them: 307 tests, all green.
 
 **C3 — MCP server and tools, words only.**
 - `server.ts`, `tool-kit`.
@@ -536,18 +732,24 @@ housekeeping) is in [iptv-mcp-servers.md](iptv-mcp-servers.md) §9.
 2. ~~Genre "Взрослые" (547 entries): adult, or "for grown-ups"?~~ **Closed in C1 (2026-10-27):**
    "for grown-ups". All 547 entries are `censored="0"` and sit in "Мультсериалы". The genre is
    kept; the adult flag follows §3.6.
-3. Series category when episodes disagree: first seen, or most common? (C2) — the parser of C1
-   uses **the first episode seen**, as §3.1 says. C2 may revisit it.
-4. Is `is_new_tag` useful when `added_at` exists? Keep it in details only unless tests show
-   the model needs it. 190 titles carry it (§2.3).
-5. The `added` date of a **film** with several variants: the parser takes the **earliest**
-   one, because the title entered the catalogue with its first variant. The design only stated
-   the rule for series ("latest"). C2 confirms or corrects it.
-6. The 127 duplicate episodes of the sample (same season and episode number, e.g. `s02e03` and
-   `S02E03`) are dropped. Which one survives is not specified; C2 may keep the first instead.
-7. The series are grouped by the normalised series title alone (see §9 C1). Two series of the
-   same name would be merged — the sample holds none, and the parser reports every series whose
-   episodes name more than one director, so that a merge does not happen unnoticed. The id of a
-   series holds its **earliest** episode year, so an earlier episode would change it. C2 looks
-   the title up by its type and its normalised title and keeps the id the row already has, so
-   the id of a series never drifts.
+3. ~~Series category when episodes disagree: first seen, or most common?~~ **Closed in C2
+   (2026-10-27):** the **first episode seen** keeps the category, as §3.1 says. The parser of
+   C1 already worked that way, and C2 stores the value as it is.
+4. ~~Is `is_new_tag` useful when `added_at` exists?~~ **Closed in C2 (2026-10-27):** the tag
+   stays in the details of the title (§6.2) and is not a filter. The "new" questions use
+   `added_at` and `added_within_days`. The flag is stored for all 190 titles of the sample.
+5. ~~The `added` date of a **film** with several variants: the earliest or the latest?~~
+   **Closed in C2 (2026-10-27):** the **earliest**, as the parser of C1 already did. The
+   title entered the catalogue with its first variant, so the first variant carries the day it
+   appeared. The database stores that day in `added_at` and the provider's own string in
+   `added_raw`.
+6. ~~The 127 duplicate episodes: which one survives?~~ **Closed in C2 (2026-10-27):** the
+   **first** one, as the parser of C1 already did (the web app does the same). The rows of the
+   episodes of the sample are 60,658 — the same number as the parser.
+7. ~~The series are grouped by the normalised series title alone; the id of a series holds its
+   earliest episode year.~~ **Closed in C2 (2026-10-27):** the grouping stays (§9 C1), and the
+   id of a series never drifts: the importer looks the title up by its `lookup_key`
+   (§3.1.1) and keeps the id the row already has. A series whose earliest episode year
+   changes keeps its id, and the test covers that case. The sample holds no two series of the
+   same name, and the parser still reports every series whose episodes name more than one
+   director, so that a merge does not happen unnoticed.

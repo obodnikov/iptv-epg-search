@@ -1,0 +1,7 @@
+#EXTM3U
+#EXTINF:5760 genres="Боевик,Драма" rating="7" year="2024" country="France" director="Julien Seri" added="2026-05-03 13:08:59+03:00" group-title="Зарубежные фильмы", Кали
+#EXTIMG:http://example.invalid/screenshots/81/8080.jpg
+#EXTDESC:Лиза, она же Кали, когда-то была рекрутом в спецназе. Расследование убийства в горах.
+http://example.invalid/film1.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="8" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" group-title="Сериалы", Бабье царство S01E01
+http://example.invalid/ep1.m3u8?token=KEY

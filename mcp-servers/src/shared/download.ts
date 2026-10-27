@@ -19,10 +19,12 @@ import { randomBytes } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
+import { sha256 } from './hash.ts';
 import { maskUrl } from './links.ts';
 import { hardenFile, isPrivateFile } from './permissions.ts';
 
 export { hardenFile, isPrivateFile } from './permissions.ts';
+export { sha256 } from './hash.ts';
 
 export const DEFAULT_USER_AGENT = 'Mozilla/5.0 (compatible; IPTV-EPG-Search/1.0)';
 export const DEFAULT_TIMEOUT_MS = 120_000;
@@ -77,13 +79,6 @@ export interface RawMeta {
   bytes: number;
   /** sha256 of the URL: the URL itself is never written down. */
   url_hash: string;
-}
-
-/**
- * sha256 of a string, used for the URL hash and the text hashes.
- */
-export function sha256(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
 /**

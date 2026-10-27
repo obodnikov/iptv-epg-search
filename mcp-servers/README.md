@@ -17,14 +17,14 @@ working folder. The design is in [`docs/design/`](docs/design/):
 | --- | --- | --- |
 | 0 | Scaffolding, repository housekeeping, shared base | done |
 | C1 | Shared modules and the catalogue parser | done |
-| C2 | Storage and import | not started |
+| C2 | Storage and import | done |
 | C3 | MCP server and tools (words only) | not started |
 | C4 | Embeddings and search by meaning | not started |
 | C5 | Pilot connection and manual checks | not started |
 | T1–T6 | TV Guide server | not started |
 
-There is no MCP server to start yet: the catalogue is parsed, but nothing serves it. The
-`cinema` and `tv-guide` scripts say so and stop; they become the real commands in C3 and T1.
+There is no MCP server to start yet: the catalogue is parsed and stored, but nothing serves it.
+The `cinema` and `tv-guide` scripts say so and stop; they become the real commands in C3 and T1.
 
 The dependencies of the servers are already pinned, even though the code that uses them
 arrives later (`@modelcontextprotocol/server` in C3, `sqlite-vec` in C2 and C4). They are
@@ -52,6 +52,7 @@ npm install
 | `npm run cinema` | starts the Cinema server (from C3 on) |
 | `npm run tv-guide` | starts the TV Guide server (from T1 on) |
 | `npm run check-real-data` | parses a real catalogue file and prints the counts |
+| `npm run import-real-data` | imports a real catalogue file and prints the sizes and the times |
 
 ## Layout
 
@@ -65,22 +66,34 @@ mcp-servers/
       args.ts           --data-dir, ~ expansion, folder creation
       countries.ts      country names in any language -> ISO 3166-1 alpha-2
       country-table.ts  the data behind countries.ts
+      db.ts             node:sqlite, sqlite-vec, WAL, the meta table, the transactions
       download.ts       GET with timeout, size limit and User-Agent
+      hash.ts           the sha256 of the servers
       links.ts          sanitizeUrl (ported) and URL masking
+      lock.ts           the refresh lock of the working folder
       log.ts            file log with levels; masks the URLs
       m3u.ts            reader for the extended M3U format
+      permissions.ts    the rights of the files of the working folder
       settings.ts       read, validate and write settings.json
       text.ts           normalisation, language guess, Snowball stemming
       time.ts           absolute times from the provider's own strings
     cinema/
       parser.ts         one catalogue entry
       catalog.ts        films with their variants, series with their episodes
+      schema.ts         the tables of the database
+      embed-text.ts     the text that is embedded for one title
+      keys.ts           the lookup key, the id and the hashes of a title
+      identity.ts       which id a title gets, and the collision path
+      store.ts          the write path: the rows, the index, the removals
+      queue.ts          the queue of the texts that have to be embedded
+      import.ts         the import pipeline
     tv-guide/           (from T1 on)
   tests/
     fixtures/           small hand-made excerpts; no real hosts or keys
     shared/ cinema/ tv-guide/
   scripts/
     check-real-data.ts  counts of a real catalogue file
+    import-real-data.ts imports a real catalogue file and prints the sizes and the times
   docs/design/          the design documents
 ```
 
