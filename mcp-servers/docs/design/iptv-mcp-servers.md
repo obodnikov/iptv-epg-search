@@ -1,7 +1,8 @@
 # IPTV MCP Servers (TV Guide + Cinema) — Design & Implementation Plan
 
-**Status:** Proposed. Design agreed in discussion on 2026-10-25; no code yet. Implementation
-starts in a separate session, **Cinema first**.
+**Status:** Proposed. Design agreed in discussion on 2026-10-25. **Phase 0 and phase C1 are done
+(2026-10-27)**: the scaffolding, the shared base and the Cinema catalogue parser. Cinema first;
+the TV Guide server follows.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Location:** `mcp-servers/` in the `iptv-epg-search` repository. A separate product that lives
@@ -113,7 +114,7 @@ Read from `~/src/open-cowork` on 2026-10-25:
 | Tests | `node --test 'tests/**/*.test.ts'` runs TypeScript tests with no extra packages | ran a sample test |
 | SQLite | built-in `node:sqlite`: SQLite 3.53.0, FTS5 compiled in, `allowExtension: true` accepted, no warning | ran a check |
 | sqlite-vec | loads into `node:sqlite` (Node ≥ 23.5) with `sqliteVec.load(db)`; vectors passed as `Uint8Array` over a `Float32Array`; scalar `vec_distance_cosine()` works on ordinary tables; `vec0` tables support metadata filters `= != > >= < <=` | context7 `/asg017/sqlite-vec` |
-| MCP SDK | `@modelcontextprotocol/server` v2 (2.3.1; stable line since 2026-07-27; spec 2026-07-28; Node ≥ 20). `serveStdio`, `registerTool` with zod `inputSchema` / `outputSchema`, `structuredContent`, `annotations`, `isError`; `McpServer(serverInfo, options)` with `serverInfo.description` and `options.instructions` | context7 `/websites/ts_sdk_modelcontextprotocol_io_v2`, `/modelcontextprotocol/typescript-sdk` |
+| MCP SDK | `@modelcontextprotocol/server` v2 (2.4.0; stable line since 2026-07-27; spec 2026-07-28; Node ≥ 20). `serveStdio` is exported from the **subpath `@modelcontextprotocol/server/stdio`**, not from the package root; `McpServer(serverInfo, options)` with `serverInfo.description` and `options.instructions`; `registerTool` with zod `inputSchema` / `outputSchema`, `structuredContent`, `annotations`, `isError` | context7 `/websites/ts_sdk_modelcontextprotocol_io_v2`, `/modelcontextprotocol/typescript-sdk`; verified by installing the package (2026-10-27) |
 | Embeddings | OpenRouter `POST https://openrouter.ai/api/v1/embeddings`, body `{ model, input: [texts] }`, answer `data[].embedding` sorted by `index`; model `BAAI/bge-m3`, 1,024 dimensions | the owner's semantic-index tool already uses this (`~/.claude/skills/semantic-index/scripts/lib/providers/openrouter.py:23`, `:113`, `:291`; this repo's `.index/config.json`) |
 | XML streaming | `saxes` (strict) and `sax` (lenient) both exist and are documented | context7; the choice is made in Phase T1 |
 
@@ -186,6 +187,7 @@ mcp-servers/
 | `download.ts` | GET with timeout, size limit and `User-Agent` (the web app's proxy sends one: [api/proxy.js:36-38](../../../api/proxy.js#L36-L38)); keeps the last good copy and its metadata in `raw/` |
 | `m3u.ts` | line reader for extended M3U: header attributes, `#EXTINF` attributes, `#EXTIMG`, `#EXTDESC`, `#EXTGRP`, stream line |
 | `text.ts` | normalisation (case, `ё`, spaces, punctuation); Snowball stemming ru/en; language guess (port of `detectLanguage`, [fuzzySearch.js:20](../../../public/scripts/utils/fuzzySearch.js#L20)) |
+| `time.ts` | absolute times from the provider's own strings: `parseProviderTimestamp` (`YYYY-MM-DD HH:MM:SS±HH:MM` → UTC epoch seconds), `formatInTimezone` |
 | `db.ts` | open `node:sqlite`, load `sqlite-vec`, WAL, schema version, `ATTACH` of the vectors file |
 | `embeddings.ts` | OpenRouter client: batches, retries with backoff, honours `Retry-After`, vectors keyed by text hash and model |
 | `search.ts` | keyword score + vector distance → blended ranking (§7) |
@@ -426,14 +428,16 @@ title typos turn out to matter, an FTS5 `trigram` table on titles is the fallbac
 Each phase ends with `npm run typecheck` (`tsc --noEmit`) and `npm test`
 (`node --test 'tests/**/*.test.ts'`) green.
 
-**Phase 0 — scaffolding and repository housekeeping.**
-- `mcp-servers/package.json` (exact versions: `@modelcontextprotocol/server`, `zod`,
-  `sqlite-vec`, the Snowball package, and later the XML parser), `tsconfig.json` (`noEmit`,
-  `allowImportingTsExtensions`, `verbatimModuleSyntax`, `erasableSyntaxOnly` if the installed
-  TypeScript has it), npm scripts `typecheck`, `test`, `cinema`, `tv-guide`.
+**Phase 0 — scaffolding and repository housekeeping.** *(done 2026-10-27)*
+- `mcp-servers/package.json` (exact versions: `@modelcontextprotocol/server` **2.4.0**, `zod`
+  **4.6.7**, `sqlite-vec` **0.1.9**, `snowball-stemmers` **0.6.0**, and later the XML parser),
+  `tsconfig.json` (`noEmit`, `allowImportingTsExtensions`, `verbatimModuleSyntax`,
+  `erasableSyntaxOnly`), npm scripts `typecheck`, `test`, `cinema`, `tv-guide`,
+  `check-real-data`. TypeScript **7.0.2** and `@types/node` **26.6.5** as dev dependencies.
 - Confirm with context7 or the package itself: the Snowball package matches
-  `public/vendor/snowball-stemmers.js`; `zod` import path for the SDK version; `sqlite-vec`
-  loads on this Mac (arm64).
+  `public/vendor/snowball-stemmers.js` (same sha256 `4bd12417…`); `zod` import path for the SDK
+  version (`zod ^4.2.0`); `sqlite-vec` loads on this Mac (arm64); `serveStdio` comes from
+  `@modelcontextprotocol/server/stdio`.
 - In the web app repo, not inside `mcp-servers/`:
   - **CLAUDE.md** says "No database, backend framework, React, TypeScript or Docker is part of
     this project". Add a note that this describes the web app and that `mcp-servers/` has its

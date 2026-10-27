@@ -1,0 +1,43 @@
+#EXTM3U url-tvg="http://example.invalid/epg.xml" x-tvg-url="http://example.invalid/epg.xml"
+#EXTINF:5760 genres="Боевик,Новинки" rating="7" year="2024" country="France" director="Julien Seri" added="2026-05-03 13:08:59+03:00" group-title="Ultra HD", Кали (4K HDR)
+#EXTIMG:http://example.invalid/screenshots/81/8080.jpg
+#EXTDESC:Лиза, она же Кали, когда-то была рекрутом в спецназе.
+http://example.invalid/index.m3u8?token=KEY
+#EXTINF:5760 genres="Боевик,Новинки" rating="7" year="2024" country="France" director="Julien Seri" added="2026-05-03 13:08:59+03:00" group-title="Зарубежные фильмы", Кали
+#EXTIMG:http://example.invalid/screenshots/81/8081.jpg
+#EXTDESC:Лиза, она же Кали, когда-то была рекрутом в спецназе.
+http://example.invalid/index.m3u8?token=KEY2
+#EXTINF:-1 genres="Комедия ,Детектив,Новинки" rating="" year="2026" duration="44" country="Россия" director="" added="2026-05-01 03:17:27+03:00" censored="0" group-title="Наши сериалы", Бабье царство S01E01
+http://example.invalid/ep1.m3u8?token=KEY
+#EXTINF:-1 genres="Комедия ,Детектив" rating="" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" group-title="Наши сериалы", Бабье царство S1 E2
+http://example.invalid/ep2.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="8" year="2025" duration="52" country="США" added="2026-04-01 10:00:00+03:00" group-title="Сериалы", Бабье царство s02e03 - Начало
+http://example.invalid/ep3.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="8" year="2025" duration="52" country="США" added="2026-04-01 10:00:00+03:00" group-title="Сериалы", Бабье царство S02E03
+http://example.invalid/ep3-duplicate.m3u8?token=KEY
+#EXTINF:-1 genres="Эротические студии" rating="5" year="2025" duration="44" country="Россия" added="2026-03-01 00:00:00+03:00" censored="1" group-title="Эротика (18+)", Что-то для взрослых S01E01
+http://example.invalid/adult.m3u8?token=KEY
+#EXTINF:2400 genres="Комедия" rating="0" year="2016" country="" director="" added="2018-12-09 18:09:09+03:00" group-title="Зарубежные фильмы", Все по новой
+http://example.invalid/zero-rating.m3u8?token=KEY
+#EXTINF:2400 genres="Драма" rating="6" year="2020" country="Canada, United States of America" added="2026-02-02 02:02:02+03:00" group-title="Зарубежные фильмы", Список
+http://example.invalid/list.m3u8?token=KEY
+#EXTINF:2400 genres="Драма" rating="6" year="2020" country="France" added="2026-02-02 02:02:02+03:00" group-title="Зарубежные фильмы", Битый поток
+fmpeg http://example.invalid/broken.m3u8?token=KEY
+#EXTINF:2400 genres="Драма" rating="6" year="2020" country="France" added="2026-02-02 02:02:02+03:00" group-title="Зарубежные фильмы", Без потока
+#EXTINF:2400 genres="Драма" rating="6" year="2021" country="France" added="2026-02-03 02:02:02+03:00" group-title="Зарубежные фильмы", Плохой постер
+#EXTIMG:javascript:alert(1)
+http://example.invalid/poster.m3u8?token=KEY
+#EXTINF:20 genres="Драма" rating="6" year="2022" country="France" added="2026-02-04 02:02:02+03:00" group-title="Зарубежные фильмы", Короткий
+http://example.invalid/short.m3u8?token=KEY
+#EXTINF:20 genres="Драма" rating="6" year="2023" country="France" added="2026-02-05 02:02:02+03:00" group-title="Зарубежные фильмы", Двойной
+http://example.invalid/double.m3u8?token=KEY
+#EXTINF:3600 genres="Драма" rating="6" year="2023" country="France" added="2026-02-05 02:02:02+03:00" group-title="Ultra HD", Двойной (4K HDR)
+http://example.invalid/double-4k.m3u8?token=KEY
+#EXTINF:3600 genres="Драма" rating="6" year="2024" country="France" added="2026-02-06 02:02:02+03:00" group-title="Ultra HD", Кириллица (4К HDR)
+http://example.invalid/cyrillic.m3u8?token=KEY
+#EXTINF:3600 genres="Драма" rating="6" year="2024" country="France" added="2026-02-06 02:02:02+03:00" group-title="Зарубежные фильмы", Дети (4Kids)
+http://example.invalid/kids.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="6" year="2025" duration="45" country="France" director="Первый Режиссер" added="2026-02-07 02:02:02+03:00" group-title="Сериалы", Одинаковое имя S01E01
+http://example.invalid/same1.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="6" year="2025" duration="45" country="France" director="Второй Режиссер" added="2026-02-07 02:02:02+03:00" group-title="Сериалы", Одинаковое имя S01E02
+http://example.invalid/same2.m3u8?token=KEY

@@ -122,10 +122,22 @@ iptv-epg-search/
 ├── AI.md                          # ✅ Web interface coding rules (HTML/CSS/JS)
 ├── AI_FRONTEND.md                 # ✅ Browser client logic rules (vanilla JS)
 ├── AI_PROXY.md                    # ✅ Serverless proxy rules (api/)
+├── AI_MCP.md                      # ✅ MCP server rules (mcp-servers/)
 ├── AI_WEB_DESIGN_SQOWE.md         # ✅ sqowe brand design system
 ├── CLAUDE.md                      # ✅ AI behavioral rules
 ├── ARCHITECTURE.md                # ✅ This file
 ├── README.md                      # ✅ User documentation
+│
+├── mcp-servers/                   # Separate product: local MCP servers (TV Guide, Cinema)
+│   ├── package.json               #   own package, own dependencies, no build step
+│   ├── tsconfig.json              #   for `tsc --noEmit` only
+│   ├── README.md                  #   install, working folder, settings, Pilot entry
+│   ├── src/shared/                #   code used by both servers
+│   ├── src/cinema/                #   the Cinema server
+│   ├── src/tv-guide/              #   the TV Guide server
+│   ├── tests/                     #   node:test suites and hand-made fixtures
+│   ├── scripts/                   #   local scripts (check-real-data)
+│   └── docs/design/               #   the design documents
 │
 ├── docs/                          # Guides and review notes
 │   ├── design/                    # live-tv-playback-plan.md (Live TV + catch-up design)

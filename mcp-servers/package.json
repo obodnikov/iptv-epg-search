@@ -1,0 +1,27 @@
+{
+  "name": "iptv-mcp-servers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local MCP servers for the IPTV EPG provider: TV Guide and Cinema catalogues",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test 'tests/**/*.test.ts'",
+    "cinema": "node -e \"console.error('The Cinema server arrives in phase C3.'); process.exit(1)\"",
+    "tv-guide": "node -e \"console.error('The TV Guide server arrives in phase T1.'); process.exit(1)\"",
+    "check-real-data": "node scripts/check-real-data.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "snowball-stemmers": "0.6.0",
+    "sqlite-vec": "0.1.9",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
+  }
+}

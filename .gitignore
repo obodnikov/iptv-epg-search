@@ -9,6 +9,9 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
+# The MCP servers keep their lock file: it pins the exact dependency versions.
+!mcp-servers/package-lock.json
+
 # Environment variables
 .env
 .env.local

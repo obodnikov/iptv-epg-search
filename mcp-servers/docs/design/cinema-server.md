@@ -1,6 +1,8 @@
 # Cinema MCP Server — Design & Implementation Plan
 
-**Status:** Proposed. **First server to implement.** No code yet.
+**Status:** In progress. **First server to implement.** Phase 0 and C1 are done (2026-10-27):
+the shared base and the catalogue parser, with the measured numbers of §2.3. The MCP server
+itself comes in C3.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -50,7 +52,7 @@ http://…/index.m3u8?token=…
 | Films (title without `S##E##`) | 6,303; the `#EXTINF` number is positive, read as **seconds** (5760 → 96 min; inferred from the values); no `censored` attribute | duration from the `#EXTINF` number |
 | Episodes | 60,785; `#EXTINF:-1`, plus `duration="44"`, read as **minutes** (inferred from the values), plus `censored` | duration from the attribute; C1 checks the unit on a few known films and episodes |
 | Series (web app's `EPISODE_REGEX`, [m3uParser.js:291](../../../public/scripts/utils/m3uParser.js#L291)) | 1,553; in 1,551 of them every episode carries the same description | one vector per series |
-| Quality variants | 627 film titles end in a quality suffix (`(4K HDR)` 602, `(4K)` 14, `(4K SDR)` 10, `(4K HD)` 1); 601 (title, year) pairs occur more than once | merge them into one title with several variants |
+| Quality variants | 637 film titles end in a quality suffix (`(4K HDR)` 602, `(4K)` 14, `(4K SDR)` 10, `(4K HD)` 1, `(4К HDR)` 10 with a **Cyrillic К**); 583 (title, year) pairs occur more than once | merge them into one title with several variants |
 | Categories (`group-title`) | 11: Сериалы 26,978 · Наши сериалы 14,621 · Мультсериалы 10,283 · Зарубежные фильмы 4,248 · Аниме 4,174 · ТВ-Шоу 2,614 · Ultra HD 1,578 · Наши фильмы 795 · Эротика (18+) 786 · Мультфильмы 524 · Музыкальные видео 487 | category filter; `list_facets` |
 | Genres | 27, comma-separated, sometimes with stray spaces (`"Комедия ,Детектив"`). Top: Комедия 21,085 · Драма 18,169 · Боевик 11,234 · Фантастика 8,248 · Семейный 7,729 · Детектив 6,835 · Приключения 6,088. Two are provider tags, not genres: **Новинки** 1,601 and **Сериал** 865 | trim; treat the two tags separately (§3.3) |
 | Countries | 143 distinct values, mixed languages: "United States of America" 16,143 · "США" 2,243 · "USA" 185; "France" 1,859 · "Франция" 89; "United Kingdom", "Англия", "Великобритания" | map to ISO codes (§3.4) |
@@ -70,6 +72,31 @@ What the web app does with this today: `parseExtInf` reads `genres`, `rating`, `
 non-empty poster, description, rating, director and country; earliest year; union of genres;
 latest `added`. Episodes are de-duplicated by season+episode
 ([m3uParser.js:373-384](../../../public/scripts/utils/m3uParser.js#L373-L384)).
+
+### 2.3 Measured on the real file (2026-10-27, `mcp-servers/scripts/check-real-data.ts`)
+
+The numbers of §2.2 come from the June 2026 snapshot. The parser of phase C1 was run over the
+same file; these are the measured values:
+
+| Fact | Measured | Comment |
+| --- | --- | --- |
+| `#EXTINF` lines | 67,090 | — |
+| Entries with a stream line | 67,088 | **2** `#EXTINF` blocks have no stream line; the web app drops them too, because it only pushes an item when a stream line follows |
+| Entries rejected by the http/https check | 1 | the `fmpeg http://…` line of §2.2 |
+| Films (titles after merging the variants) | **5,717** | 6,303 film *entries* in the file, 6,302 of them read (the malformed stream line is rejected); the design's estimate "about 5,700" was right |
+| Series | **1,553** | exactly as predicted |
+| Unique episodes | **60,658** | 60,787 episode entries; **127** are duplicates of a season+episode number and are dropped |
+| Titles in total | **7,270** | 5,717 films + 1,553 series; the design's estimate "about 7,300" was right |
+| Quality suffixes | **637** | 602 `4K HDR`, 14 `4K`, 10 `4K SDR`, 1 `4K HD` and **10 `4К HDR` with a Cyrillic К**. The design counted 627: it missed the Cyrillic ones |
+| Films with several quality variants | **583** | 574 extra variants; the design's "601 (title, year) pairs" was measured with a plain lower-case comparison, with the `title_norm` rule it is 583 |
+| Series names with more than one director | **0** | no two series of the sample share a name, so the grouping by name does not merge anything |
+| Adult titles | **3** | the 786 `censored="1"` entries collapse into 3 series |
+| Titles tagged "Новинки" | **190** | 1,601 entries carry the tag |
+| Country names | **143**, all mapped to an ISO code | the `country` attribute is a comma-separated list; the table covers every name |
+| `added` offsets | all `+03:00` | 67,088 values, one format |
+| Film length | p10 86 min, p50 104 min, p90 135 min | the `#EXTINF` number is **seconds** ✓ |
+| Episode length | 4 … 600 min | the `duration` attribute is **minutes** ✓ |
+| Parse time | 0.4 s | 54 MB of text, single pass |
 
 ---
 
@@ -164,27 +191,44 @@ appends the director to the hash input for both.
 - Genres are trimmed and stored as written ("Комедия").
 - **Новинки** sets `is_new_tag` and is not stored as a genre. "New" questions use `added_at`
   first; the tag is shown in details.
-- **Сериал** is dropped: the type comes from the episode pattern.
+- **Сериал** is dropped: the type comes from the episode pattern. All 865 entries carrying it
+  live in the category "Ultra HD", so it marks a quality, not a type.
+- **Взрослые** is a genre, not an adult marker (see §3.6). All 547 entries live in the category
+  "Мультсериалы" with `censored="0"` — for example «Частые побочные явления» (South Park).
 - `list_facets` returns the genre list with counts, so the model never guesses spellings.
 
 ### 3.4 Countries
 
 `src/shared/countries.ts` maps names in English and Russian (and common short forms: "USA",
-"США", "Англия") to ISO codes. Phase C1 generates the table from the 143 values in the sample
-and reviews it by hand. Values it does not know keep `code = NULL` and are still found by
-text. `countryAliases` in settings can add entries.
+"США", "Англия") to ISO codes. The table was generated from the 143 values of the sample and
+reviewed by hand: **all 143 are mapped** (phase C1). Values it does not know keep `code = NULL`
+and are still found by text. `countryAliases` in settings can add entries.
+
+The `country` attribute holds a **comma-separated list** ("Canada, United States of America").
+The table maps the single names; a title keeps the raw value and gets one code per country of the
+list.
 
 ### 3.5 Quality variants
 
-A film title matching `\s*\((4K[^)]*|HDR|UHD[^)]*)\)\s*$` has the suffix removed and stored
-as `quality`; without a suffix the quality is `standard`. Films with the same
-(`title_norm`, `year`) become one title with several variants. Expected: about 5,700 film
-titles plus 1,553 series, about 7,300 titles in total (to confirm in C2).
+A film title matching `\s*\((4[KК](?:\s+(?:HDR|SDR|HD))?|HDR|UHD)\)\s*$` has the suffix removed
+and stored as `quality`; without a suffix the quality is `standard`. Films with the same
+(`title_norm`, `year`) become one title with several variants. Measured on the sample: **5,717
+film titles and 1,553 series, 7,270 titles in total**; 583 films carry more than one variant
+(§2.3).
+
+The suffix is matched against the tokens the provider really uses, and the "К" of "4К HDR" is
+the Cyrillic letter in ten entries. A title that only starts like a quality ("4Kids", "UHDTV")
+keeps its bracket.
 
 ### 3.6 Adult flag
 
 `is_adult = 1` when any entry of the title has `censored="1"` or its category contains
 `18+`. All tools filter `is_adult = 0` unless `includeAdult` is `true`.
+
+The genre "Взрослые" ("for grown-ups") is **not** an adult marker: its 547 entries are
+`censored="0"` and sit in the category "Мультсериалы". The adult set is exactly the 786
+`censored="1"` entries, all in "Эротика (18+)", all in the episode format, all with the genre
+"Эротические студии". They form 3 series (§2.3).
 
 ---
 
@@ -393,8 +437,10 @@ Template written at first start:
 Each phase ends with `npm run typecheck` and `npm test` green. Phase 0 (scaffolding and repo
 housekeeping) is in [iptv-mcp-servers.md](iptv-mcp-servers.md) §9.
 
-**C1 — Shared base and catalogue parsing.**
+**C1 — Shared base and catalogue parsing.** *(done 2026-10-27)*
 - Shared modules: `args`, `settings`, `log`, `download`, `m3u`, `text`, `countries`, `links`.
+  Two more were added: `country-table.ts` (the data behind `countries.ts`) and `time.ts` (the
+  absolute times of the provider's own strings).
 - Cinema parser:
   - all attributes, including `duration` and `censored`;
   - episode regex, series consolidation, quality variants;
@@ -407,6 +453,21 @@ housekeeping) is in [iptv-mcp-servers.md](iptv-mcp-servers.md) §9.
   - an entry without a stream line; a BOM before `#EXTM3U`.
 - Real-data script on `tmp/index.m3u` prints counts to compare with §2.2. Settle the open
   points: `rating="0"`, genre "Взрослые", the country table.
+- What was built: `src/shared/{args,countries,country-table,download,links,log,m3u,settings,text,time}.ts`
+  and `src/cinema/{parser,catalog}.ts`, with 119 tests in `tests/` and
+  `scripts/check-real-data.ts`. The measured numbers are in §2.3.
+- Two deviations from this document, both forced by the real data:
+  - the title is split at the last comma **outside** the quoted attribute values, so that
+    `country="Canada, United States of America"` does not cut the title in the wrong place
+    (no title of the sample holds a comma);
+  - the series are grouped by the normalised series title alone, and the **earliest** year of
+    their episodes becomes the year of the series. Grouping by the year of the episode would
+    split one series into several.
+- The quality suffix is matched against the tokens the provider uses, and the Cyrillic "К" of
+  "4К HDR" is recognised: the regex of §3.5 was too greedy ("4Kids" would have become a
+  variant) and too narrow (the ten Cyrillic entries would have kept their bracket).
+- The episode pattern is the one of the web app, unchanged. Of the sample, **no** title looks
+  like an episode and still fails the pattern, so the pattern was not loosened.
 
 **C2 — Storage and import.**
 - Schema, staging and swap, stable ids, `first_seen` / `removed`, FTS with stemmed text,
@@ -469,8 +530,24 @@ housekeeping) is in [iptv-mcp-servers.md](iptv-mcp-servers.md) §9.
 
 ## 11. Open items (Cinema)
 
-1. `rating="0"` (one entry): unknown or a real zero? (C1)
-2. Genre "Взрослые" (547 entries): adult, or "for grown-ups"? (C1)
-3. Series category when episodes disagree: first seen, or most common? (C2)
+1. ~~`rating="0"` (one entry): unknown or a real zero?~~ **Closed in C1 (2026-10-27):** the
+   provider uses `rating=""` (5,927 entries) for "unknown", so `rating="0"` is a real score and
+   stays 0. The single entry is «Все по новой» (2016, "Комедия", "Зарубежные фильмы").
+2. ~~Genre "Взрослые" (547 entries): adult, or "for grown-ups"?~~ **Closed in C1 (2026-10-27):**
+   "for grown-ups". All 547 entries are `censored="0"` and sit in "Мультсериалы". The genre is
+   kept; the adult flag follows §3.6.
+3. Series category when episodes disagree: first seen, or most common? (C2) — the parser of C1
+   uses **the first episode seen**, as §3.1 says. C2 may revisit it.
 4. Is `is_new_tag` useful when `added_at` exists? Keep it in details only unless tests show
-   the model needs it.
+   the model needs it. 190 titles carry it (§2.3).
+5. The `added` date of a **film** with several variants: the parser takes the **earliest**
+   one, because the title entered the catalogue with its first variant. The design only stated
+   the rule for series ("latest"). C2 confirms or corrects it.
+6. The 127 duplicate episodes of the sample (same season and episode number, e.g. `s02e03` and
+   `S02E03`) are dropped. Which one survives is not specified; C2 may keep the first instead.
+7. The series are grouped by the normalised series title alone (see §9 C1). Two series of the
+   same name would be merged — the sample holds none, and the parser reports every series whose
+   episodes name more than one director, so that a merge does not happen unnoticed. The id of a
+   series holds its **earliest** episode year, so an earlier episode would change it. C2 looks
+   the title up by its type and its normalised title and keeps the id the row already has, so
+   the id of a series never drifts.

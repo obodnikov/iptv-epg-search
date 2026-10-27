@@ -34,6 +34,7 @@ provider requests to get around CORS.
 | [AI_WEB_DESIGN_SQOWE.md](AI_WEB_DESIGN_SQOWE.md) | sqowe brand design system (`public/styles/**`, `public/index.html`): colours, Montserrat typography, components. |
 | [AI_FRONTEND.md](AI_FRONTEND.md) | Browser client logic (`public/scripts/**`, `tests/**`; plain JavaScript): state and storage, safe HTML, time handling, network calls, tests. |
 | [AI_PROXY.md](AI_PROXY.md) | Serverless proxy (`api/**`; Node.js on Vercel): input checks and the response allowlist. |
+| [AI_MCP.md](AI_MCP.md) | MCP servers (`mcp-servers/**`; Node.js + TypeScript, no build step): working folder, settings, secret masking, stdout discipline, storage, tests. |
 
 `ARCHITECTURE.md` and the `AI_*.md` files must not redefine or duplicate each other's content.
 
@@ -79,4 +80,8 @@ provider requests to get around CORS.
   open `/tests/test-runner.html`.
 - **Deploy** — `npm run deploy` (`vercel --prod`) publishes to production; run it only when the user asks.
 - **Secrets** — none; the app needs no environment variables, and `.env*` files are git-ignored. No database,
-  backend framework, React, TypeScript or Docker is part of this project.
+  backend framework, React, TypeScript or Docker is part of **the web app**.
+- **MCP servers** — `mcp-servers/` is a separate product that lives in this repository for now: TypeScript,
+  run directly by Node, with its own `package.json`, its own tests (`npm run typecheck`, `npm test` inside
+  `mcp-servers/`) and its own rules in [AI_MCP.md](AI_MCP.md). It is not deployed to Vercel and shares no
+  code with `public/` or `api/`.
