@@ -27,76 +27,45 @@ import { join } from 'node:path';
 
 import { type Db } from '../shared/db.ts';
 import { ensureRawDir } from '../shared/args.ts';
-import { downloadToFile } from '../shared/download.ts';
+import { downloadToFile, readRawMeta, writeRawMeta } from '../shared/download.ts';
+import { sha256 } from '../shared/hash.ts';
 import { acquireLock, type LockHandle } from '../shared/lock.ts';
-import { countryCode } from '../shared/countries.ts';
 import { hasM3uHeader, stripBom } from '../shared/m3u.ts';
-import { buildCatalog, type Catalog, type ParsedTitle } from './catalog.ts';
-import { buildEmbeddingText } from './embed-text.ts';
-import { idSeedFor, lookupKeyFor, textHash } from './keys.ts';
+import { buildCatalog, type Catalog } from './catalog.ts';
 import { parseCinemaCatalog, type CinemaEntry } from './parser.ts';
-import {
-  computeContentHash,
-  writeCatalog,
-  type PreparedTitle,
-  type WriteResult,
-} from './store.ts';
+import { prepareTitles } from './prepare.ts';
+import { writeCatalog, type WriteResult } from './store.ts';
+import type { ImportLogger, ImportOptions, ImportOutcome } from './import-options.ts';
+
+export type {
+  ImportLogger,
+  ImportOptions,
+  ImportOutcome,
+} from './import-options.ts';
+export { prepareTitles, prepareTitle } from './prepare.ts';
 
 /**
- * Where the import writes what it has to say.
+ * The signature of the settings that change what is imported.
  *
- * The server has a logger that writes to the log file of the working
- * folder. The scripts write to the console.
+ * The excluded categories, the country aliases and the change tracking
+ * change what the catalogue holds in the database. A download that did not
+ * change has to be imported again when one of them changed.
  */
-export interface ImportLogger {
-  warn(message: string, fields?: Record<string, unknown>): void;
-  error(message: string, fields?: Record<string, unknown>): void;
-}
-
-export interface ImportOptions {
-  /** The URL of the catalogue. An empty URL means "not configured". */
-  cinemaUrl: string;
-  /** The categories that are not loaded at all. */
+export function importSettingsSignature(options: {
   excludeCategories: string[];
-  /** Extra country names to ISO codes. */
   countryAliases: Record<string, string>;
-  /** Keep `first_seen_at` and `removed_at`. */
   trackChanges: boolean;
-  /** The model the vectors are made for. */
-  embeddingModel: string;
-  /** Texts shorter than this are only searched by words. */
-  minTextChars: number;
-  /** The moment of the import, in epoch seconds. */
-  now: number;
-  /**
-   * The working folder.
-   *
-   * When it is known, the import takes the lock of the folder, so that two
-   * processes never write the catalogue at the same time.
-   */
-  dataDir?: string;
-  /** Where the import writes the collisions and the errors. */
-  log?: ImportLogger;
-}
-
-export interface ImportOutcome {
-  ok: boolean;
-  /** The reason the import failed, when it did. */
-  error?: string;
-  /** The whole import, in milliseconds. */
-  durationMs: number;
-  /** True when the file was downloaded first. */
-  downloaded: boolean;
-  /** The `#EXTINF` blocks that were read. */
-  entries: number;
-  /** The entries whose stream line was not an http/https URL. */
-  rejected: number;
-  /** The `#EXTINF` blocks without a stream line. */
-  incomplete: number;
-  /** The titles that were written. */
-  titles: number;
-  /** The result of the write. */
-  write: WriteResult | null;
+}): string {
+  return sha256(
+    JSON.stringify({
+      excludeCategories: options.excludeCategories
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+        .sort(),
+      countryAliases: Object.entries(options.countryAliases).sort(),
+      trackChanges: options.trackChanges,
+    }),
+  );
 }
 
 /**
@@ -146,79 +115,6 @@ export function filterExcludedCategories(
 }
 
 /**
- * Turn the titles of the catalogue into the rows that are written.
- */
-export function prepareTitles(catalog: Catalog, options: ImportOptions): PreparedTitle[] {
-  return catalog.titles.map((title) => prepareTitle(title, options));
-}
-
-/**
- * Turn one title of the catalogue into the rows that are written.
- */
-export function prepareTitle(title: ParsedTitle, options: ImportOptions): PreparedTitle {
-  const countries = title.countries.map((raw) => ({
-    raw,
-    code: countryCode(raw, options.countryAliases),
-  }));
-
-  const embedText = buildEmbeddingText({
-    type: title.type,
-    title: title.title,
-    year: title.year,
-    genres: title.genres,
-    countries: title.countries,
-    director: title.director,
-    description: title.description,
-  });
-
-  const prepared: PreparedTitle = {
-    type: title.type,
-    title: title.title,
-    titleNorm: title.titleNorm,
-    year: title.year,
-    rating: title.rating,
-    category: title.category,
-    director: title.director,
-    description: title.description,
-    posterUrl: title.posterUrl,
-    durationMin: title.durationMin,
-    addedAt: title.addedAt,
-    addedRaw: title.addedRaw,
-    isAdult: title.isAdult,
-    isNewTag: title.isNewTag,
-    genres: title.genres,
-    countries,
-    seasonCount: title.type === 'series' ? title.seasonCount : null,
-    episodeCount: title.type === 'series' ? title.episodeCount : null,
-    variants: title.variants
-      .filter((variant) => variant.streamUrl !== null)
-      .map((variant) => ({
-        quality: variant.quality,
-        streamUrl: variant.streamUrl ?? '',
-        durationMin: variant.durationMin,
-        category: variant.category,
-      })),
-    episodes: title.episodes
-      .filter((episode) => episode.streamUrl !== null)
-      .map((episode) => ({
-        season: episode.season,
-        episode: episode.episode,
-        name: episode.name,
-        streamUrl: episode.streamUrl ?? '',
-        durationMin: episode.durationMin,
-      })),
-    lookupKey: lookupKeyFor(title.type, title.titleNorm, title.year),
-    seed: idSeedFor(title.type, title.titleNorm, title.year),
-    embedText,
-    textHash: textHash(embedText),
-    contentHash: '',
-  };
-
-  prepared.contentHash = computeContentHash(prepared);
-  return prepared;
-}
-
-/**
  * The import that did not work.
  *
  * Every failure of the whole path comes through here: the answer of the
@@ -241,6 +137,7 @@ function failure(
     rejected: counts.rejected ?? 0,
     incomplete: counts.incomplete ?? 0,
     titles: 0,
+    unchanged: false,
     write: null,
   };
 }
@@ -306,6 +203,7 @@ function importText(db: Db, text: string, options: ImportOptions): ImportOutcome
     rejected: parsed.rejected,
     incomplete: parsed.incomplete,
     titles: prepared.length,
+    unchanged: false,
     write,
   };
 }
@@ -458,6 +356,7 @@ export async function refreshCatalog(
   // and the import.
   const outcome = await withImportLockAsync(dataDir, async () => {
     const rawPath = join(dataDir, 'raw', 'catalog.m3u');
+    const metaPath = join(dataDir, 'raw', 'meta.json');
 
     // The folder of the download is part of the working folder: it is
     // created here, so that the caller does not have to know about it.
@@ -472,6 +371,12 @@ export async function refreshCatalog(
         started,
       );
     }
+
+    // The metadata of the last good download is read before the download:
+    // it says what the catalogue looked like the last time.
+    const previous = await readRawMeta(metaPath);
+
+    options.onPhase?.('downloading');
 
     let download;
     try {
@@ -497,6 +402,57 @@ export async function refreshCatalog(
       );
     }
 
+    // The catalogue of the provider did not change: the data in the
+    // database is already the data of the provider. The import is skipped
+    // unless the caller insists.
+    //
+    // The metadata of the last **successful** import is the one that is
+    // compared: a failed import must not make the next refresh believe
+    // that the catalogue is already in the database.
+    //
+    // The settings that change what is imported are part of the
+    // comparison: a new value of `excludeCategories` has to be imported,
+    // even when the file of the provider did not change.
+    const settingsHash = importSettingsSignature(options);
+
+    // The database has to hold the catalogue as well. A database that was
+    // wiped, or one that never got the catalogue, is imported even when
+    // the file of the provider did not change.
+    const liveTitles =
+      db.get<{ found: number }>(
+        'SELECT count(*) AS found FROM titles WHERE removed_at IS NULL',
+      )?.found ?? 0;
+
+    if (
+      !options.force &&
+      liveTitles > 0 &&
+      previous &&
+      previous.sha256 === download.sha256 &&
+      previous.settings_hash === settingsHash
+    ) {
+      options.log?.info?.('the catalogue did not change', { titles: 0 });
+      // Only the moment of the download changes: the hash stays the hash
+      // of the file that is in the database.
+      try {
+        await writeRawMeta(metaPath, { ...previous, fetched_at: download.fetchedAt });
+      } catch (error) {
+        options.log?.warn('the metadata of the download could not be written', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return {
+        ok: true,
+        durationMs: Date.now() - started,
+        downloaded: true,
+        entries: 0,
+        rejected: 0,
+        incomplete: 0,
+        titles: 0,
+        unchanged: true,
+        write: null,
+      };
+    }
+
     // The lock of the working folder is already held: the import itself
     // must not take it a second time.
     let text: string;
@@ -513,7 +469,29 @@ export async function refreshCatalog(
       );
     }
 
+    options.onPhase?.('importing');
+
     const imported = importText(db, text, options);
+
+    // The metadata of the download is written down only when the
+    // catalogue was really written: the hash of the file, the number of
+    // bytes and the hash of the URL. The URL itself is never written down.
+    if (imported.ok) {
+      try {
+        await writeRawMeta(metaPath, {
+          fetched_at: download.fetchedAt,
+          sha256: download.sha256,
+          bytes: download.bytes,
+          url_hash: sha256(options.cinemaUrl),
+          settings_hash: settingsHash,
+        });
+      } catch (error) {
+        options.log?.warn('the metadata of the download could not be written', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     return { ...imported, downloaded: true, durationMs: Date.now() - started };
   });
 

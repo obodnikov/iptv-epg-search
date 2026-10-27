@@ -1,8 +1,9 @@
 # Cinema MCP Server — Design & Implementation Plan
 
-**Status:** In progress. **First server to implement.** Phase 0, C1 and C2 are done (2026-10-27):
-the shared base, the catalogue parser and the storage with the import, with the measured
-numbers of §2.3 and §9. The MCP server itself comes in C3.
+**Status:** In progress. **First server to implement.** Phase 0, C1, C2 and C3 are done
+(2026-10-27): the shared base, the catalogue parser, the storage with the import, and the MCP
+server with its six tools, with the measured numbers of §2.3 and §9. The search by meaning
+comes in C4.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -370,6 +371,13 @@ The main search. Use it first for any catalogue question.
 **Returns:** `{ total, search_mode: "words+meaning" | "words", items: [list item], next_cursor }`.
 Titles with `removed_at` set are excluded.
 
+**The words of C3.** The search matches words, not meaning: the words of the `query` and the
+words of the `keywords` are alternatives, and `bm25` puts the title that matches more of them
+higher (the title weighs 3.0, the people 1.5, the description 1.0). The `person` is looked for
+in the people and in the description of the title. `search_mode` is `"words"` until C4 adds the
+meaning side; the description of the tool says so, so that the model does not read a thin
+result as the answer to a question about meaning.
+
 ### 6.2 `get_title`
 
 | Parameter | Type | Meaning |
@@ -448,7 +456,8 @@ Starts a background refresh and returns at once: `started`, `already running`, o
 > - `countries` means the country where the film was made.
 > - "New" or "recently added": `sort="added"` with `added_within_days`.
 > - "Something like X": find X with `search_titles`, then call `find_similar_titles` with its
->   `title_id`. For a film that is not in the catalogue, pass a short description instead.
+>   `title_id`. That tool arrives with the search by meaning; until then, search with the
+>   genres, the country and the director of X.
 > - Lists contain no play links. Call `get_title` (film) or `list_episodes` (series) when the
 >   user wants to watch.
 > - `rating` is the provider's 0–10 score. When judging whether a title is worth watching, say
@@ -675,19 +684,160 @@ housekeeping) is in [iptv-mcp-servers.md](iptv-mcp-servers.md) §9.
 The fifth review was the last one of the loop, so these two fixes were **not** reviewed
 again. The test suite covers them: 307 tests, all green.
 
-**C3 — MCP server and tools, words only.**
-- `server.ts`, `tool-kit`.
-- Tools: `search_titles` (filters and words), `get_title`, `list_episodes`, `list_facets`,
-  `get_status`, `refresh_catalog` (background, lock), instructions, `serverInfo.description`.
-- Tests through the SDK's in-memory transport:
+**C3 — MCP server and tools, words only.** *(done 2026-10-27)*
+- What was built:
+  - `src/shared/tool-kit.ts` — the shape of the answers (`okResult`, `errorResult`) and the
+    cursor: the position and the signature of the query it belongs to;
+  - `src/shared/refresh.ts` — the background refresh: the phase, the progress, the last
+    result and the last failure. The lock stays in `lock.ts`;
+  - `src/cinema/config.ts` — the settings template, the rules of the file and the typed
+    accessor;
+  - `src/cinema/filters.ts` — the filters as SQL: the type, the categories, the genres, the
+    excluded genres, the countries (an ISO code **or** a name in any language), the years, the
+    rating, the length and the window of the new titles;
+  - `src/cinema/search.ts` — the words-only search: the FTS5 expression, the bm25 weights
+    `(0, 3.0, 1.5, 1.0)`, the order and the page;
+  - `src/cinema/details.ts` — `get_title` and `list_episodes`, the two tools that carry play
+    links;
+  - `src/cinema/facets.ts` — `list_facets`;
+  - `src/cinema/status.ts` — `get_status` and the state of the last refresh in the `meta`
+    table;
+  - `src/cinema/refresh.ts` — the background refresh of the catalogue and the question
+    whether the server has to refresh when it starts;
+  - `src/cinema/render.ts` — the compact text of the answers;
+  - `src/cinema/schemas.ts` — the parameters and the answers of the tools;
+  - `src/cinema/descriptions.ts` — what the tools tell the model;
+  - `src/cinema/handlers.ts` — what the tools do;
+  - `src/cinema/tools.ts` — the registration of the six tools;
+  - `src/cinema/server.ts` — the entry point.
+  - The modules were split so that none of them grows past the 600 lines of `AI_MCP.md`:
+    `prepare.ts` (the rows of the titles), `import-options.ts` (the types of the import) and
+    `handlers.ts` came out of `import.ts` and `tools.ts`.
+- Tests through the SDK's in-memory transport (`tests/cinema/tools.test.ts`,
+  `tests/cinema/tool-names.test.ts`), plus the unit tests of the search
+  (`tests/cinema/query.test.ts`), of the cursor (`tests/shared/tool-kit.test.ts`) and of the
+  background refresh (`tests/shared/refresh.test.ts`):
   - output schemas;
   - `isError` with valid values for an unknown genre or category;
-  - the cursor;
+  - the cursor, and a cursor of another query that is refused;
   - adult content excluded by default;
   - no `play_url` in list results;
   - "not configured" answers;
   - every tool name passes Pilot's rule. The verb lists are copied into the test from
     `~/src/open-cowork/src/shared/mcp-tool-classification.ts`; update them when Pilot changes.
+- The client of the tests is the official one: `@modelcontextprotocol/client` **2.4.0** is a
+  **devDependency** of the package. The production dependencies are unchanged.
+- **The search of C3 is words only.** The words of the `query` and the words of the
+  `keywords` are alternatives, and `bm25` puts the title that matches more of them higher;
+  the `person` is looked for in the people and in the description of the title. The answer
+  says so: `search_mode` is `"words"`. C4 adds the meaning side and the blend.
+- **Two decisions the design left open, taken in C3:**
+  - the **cursor** holds the offset and the **signature of the query**: the filters, the
+    words and the order. A cursor of another query is refused with a sentence that says so,
+    instead of paging through a result that has nothing to do with it;
+  - the **refresh compares the download with the last one**: the hash of the file is written
+    down in `raw/meta.json`, and a refresh that finds the same file writes nothing. The
+    `force` parameter of `refresh_catalog` imports it anyway. The hash of the URL is written
+    down as well: a changed URL triggers a refresh even when the data is still fresh.
+- The `meta` table holds the state of the last refresh (the moment, the result, the number of
+  the entries that were read and dropped, the number of the titles, whether the download had
+  changed), so that a server that starts again knows how fresh its data is.
+- **What the first review of C3 (2026-10-27) changed.** Nine issues were found and fixed:
+  - the hash of the download was written down **before** the import: a failed import left the
+    next refresh believing that the catalogue was already in the database. The hash is written
+    down only after a successful import now;
+  - a **failed refresh moved the moment of the last import**, so the server did not try again
+    until the data was old enough. The `meta` table keeps the moment of the **last attempt**
+    and the moment of the **last successful import** apart now, and a failed attempt is a
+    reason to refresh at the start;
+  - the background refresh reported a failed download as a clean finish: the task throws now,
+    so the phase becomes "failed" and the status carries the reason;
+  - the page of the episodes advanced by the number of the **surviving** items, so a dropped
+    link repeated a row. The page advances by the number of the rows the database gave;
+  - the moment of the last refresh was shown in UTC while every other moment of the server is
+    shown in the zone of the setting;
+  - the **excluded genres** were not checked against the catalogue: an unknown value is an
+    error with the valid ones now, like the genres of the filter;
+  - the limit of a list was only held by the setting, which could promise more than the
+    schema of the tool. The limit is held by the schema, the setting and the tool at the same
+    time now (50, as §6.1 says);
+  - the **detail tools gave the adult titles** even when `includeAdult` was off. The rule of
+    the parent document (§11) is that adult content is absent unless the setting allows it:
+    `get_title` and `list_episodes` refuse an adult title now;
+  - the tests did not cover a failed import and the question whether the server refreshes at
+    the start. Both are covered now (`tests/cinema/refresh.test.ts`,
+    `tests/cinema/schedule.test.ts`).
+- **What the second review of C3 (2026-10-27) changed.** Nine issues were found and fixed:
+  - the **cursor of the episodes** was signed with the season of the request (`first` when
+    none was given), while the answer names the resolved season. A call with the season of
+    the answer and the cursor of the first call was refused as a different query. The season
+    is resolved before the cursor is signed now;
+  - the page of the episodes advanced by the number of the rows the database gave, but the
+    answer did not say how many links were dropped. `dropped_links` is part of the answer
+    now, and the text says what happened when a page is empty;
+  - the **poster** of a title left the server without the check of the links. It goes
+    through `sanitizeUrl` now, like the play links;
+  - the **unchanged download** was compared by the hash of the file alone: a new value of
+    `excludeCategories` or of `countryAliases` had no effect until the provider changed
+    something. The hash of the settings that change what is imported is written down with
+    the file now, and a change of the settings forces the import;
+  - the text of a list did not carry the **id** of the title, and the model reads the text
+    before it reads the structure. The id is on every line now;
+  - the error of an unknown genre named **every** valid value. The list is cut at 20 values
+    now, with a pointer to `list_facets`;
+  - `added_within_days` and `max_minutes` accepted negative numbers, which made a search
+    find nothing. Both have a range now;
+  - the refresh was built **twice** — once for the start and once for the tools. It is built
+    once now and is part of the context of the server;
+  - the episodes had no test of the pagination. The pages, the cursor with and without the
+    season and the cursor of another series are covered now.
+- **What the third review of C3 (2026-10-27) changed.** Five issues were found and fixed:
+  - the **start** of the server did not know that the settings of the import had changed: a
+    new value of `excludeCategories` had no effect until the data was old enough. The
+    signature of the settings is written down in the `meta` table now, and a change of it is
+    a reason to refresh at the start;
+  - the text of `get_title` said nothing when **every link of a film was dropped**: the model
+    could think that the film has no link at all. The dropped links are named in the text
+    now, like in `list_episodes`;
+  - the answer of `get_status` said that the last refresh **failed** when there never was
+    one. The state of the last refresh has its own value now: `never`, `ok`, `unchanged` or
+    `failed`;
+  - the test of the cursor of another series never reached the check of the cursor. It uses a
+    real second series and a real second season now;
+  - the clean-up of the tests removed the folder while the connection was still open. It
+    waits for the refresh and for the connection now.
+- **What the fourth review of C3 (2026-10-27) changed.** Four issues were found and fixed:
+  - the **hashes of the last import** were only compared when they were there: a catalogue
+    that was imported by another path kept them empty, and a change of the URL or of the
+    settings was never noticed. The hashes are compared without a shortcut now, and a
+    missing hash is a reason to import once more, so that it is written down;
+  - the values of the closed sets were **trimmed for the check** but not for the SQL: a
+    value with a space at the end passed the check and matched nothing. The values are
+    cleaned once now, for the check and for the SQL;
+  - the tests went on when a background refresh **did not settle**. The wait throws now, and
+    the clean-up reports it;
+  - the text of a list said "the filters" when there were no words, while the structure said
+    `search_mode: "words"`. The text names the engine and says how the result was found.
+- **What the fifth review of C3 (2026-10-27) changed.** Six issues were found and fixed. This
+  was the last round of the loop, so these fixes were not reviewed again — the test suite
+  covers them:
+  - the **unchanged download** was skipped even when the database held **no catalogue**: a
+    wiped `data.sqlite` next to an old `raw/meta.json` left the catalogue empty until
+    somebody passed `force`. The database has to hold titles now, otherwise the catalogue is
+    written again;
+  - the **number of the titles** and the page of the titles were two statements without a
+    transaction: a refresh that committed in between could make the two disagree. Both are
+    read in one snapshot now (`withSnapshot` in `shared/db.ts`);
+  - the text of a list said "search by words (filters only)", which contradicted itself. It
+    says "word search" or "filters only" now;
+  - `get_status` mixed the units of the time: the moment of the running refresh was in
+    milliseconds while the other moments are formatted strings. The field is named
+    `started_at_ms` now, next to `elapsed_ms`;
+  - `list_facets` answered with an empty catalogue while the first import was running, and
+    the model could think that the provider holds no genres. It answers like the search
+    does now: with a message that names the refresh;
+  - the settings could hold a `defaultLimit` that is bigger than the `maxLimit`. The default
+    is held down by the biggest limit now.
 
 **C4 — Embeddings and search by meaning.**
 - `embeddings.ts` (OpenRouter, batches, backoff), `vectors.sqlite`, query-embedding cache, the

@@ -1,8 +1,9 @@
 # IPTV MCP Servers (TV Guide + Cinema) — Design & Implementation Plan
 
-**Status:** Proposed. Design agreed in discussion on 2026-10-25. **Phase 0 and the phases C1
-and C2 are done (2026-10-27)**: the scaffolding, the shared base, the Cinema catalogue parser
-and the Cinema storage with the import. Cinema first; the TV Guide server follows.
+**Status:** Proposed. Design agreed in discussion on 2026-10-25. **Phase 0 and the phases C1,
+C2 and C3 are done (2026-10-27)**: the scaffolding, the shared base, the Cinema catalogue parser,
+the Cinema storage with the import and the Cinema MCP server with its six tools. Cinema first;
+the TV Guide server follows.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Location:** `mcp-servers/` in the `iptv-epg-search` repository. A separate product that lives
@@ -200,8 +201,10 @@ mcp-servers/
 `time`, `db`, `links`, `countries` and the hash of the servers are done. Three more were added
 while the Cinema server was built: `hash.ts` (the sha256 of the servers), `lock.ts` (the
 refresh lock of the working folder) and `permissions.ts` (the rights of the files). `refresh.ts`
-is split: the **lock** is done (C2), the schedule and the progress come with the tools (C3).
-`embeddings.ts`, `search.ts` and `tool-kit.ts` come with C3 and C4.
+is split: the **lock** is done (C2), the **schedule and the progress** came with the tools
+(C3). `tool-kit.ts` — the shape of the answers and the cursor — is done (C3).
+`embeddings.ts` and the shared `search.ts` (the blend of the words and the meaning) come with
+C4.
 
 ### 4.4 Movability rule
 
@@ -445,6 +448,9 @@ Each phase ends with `npm run typecheck` (`tsc --noEmit`) and `npm test`
   `tsconfig.json` (`noEmit`, `allowImportingTsExtensions`, `verbatimModuleSyntax`,
   `erasableSyntaxOnly`), npm scripts `typecheck`, `test`, `cinema`, `tv-guide`,
   `check-real-data`. TypeScript **7.0.2** and `@types/node` **26.6.5** as dev dependencies.
+  `@modelcontextprotocol/client` **2.4.0** was added as a third dev dependency in C3: the
+  contract tests of the tools call the server through the SDK's in-memory transport with the
+  official client. The production dependencies are unchanged.
 - Confirm with context7 or the package itself: the Snowball package matches
   `public/vendor/snowball-stemmers.js` (same sha256 `4bd12417…`); `zod` import path for the SDK
   version (`zod ^4.2.0`); `sqlite-vec` loads on this Mac (arm64); `serveStdio` comes from

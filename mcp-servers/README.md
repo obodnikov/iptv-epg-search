@@ -18,13 +18,17 @@ working folder. The design is in [`docs/design/`](docs/design/):
 | 0 | Scaffolding, repository housekeeping, shared base | done |
 | C1 | Shared modules and the catalogue parser | done |
 | C2 | Storage and import | done |
-| C3 | MCP server and tools (words only) | not started |
+| C3 | MCP server and tools (words only) | done (2026-10-27) |
 | C4 | Embeddings and search by meaning | not started |
 | C5 | Pilot connection and manual checks | not started |
 | T1–T6 | TV Guide server | not started |
 
-There is no MCP server to start yet: the catalogue is parsed and stored, but nothing serves it.
-The `cinema` and `tv-guide` scripts say so and stop; they become the real commands in C3 and T1.
+The Cinema server runs: `npm run cinema` starts it and speaks MCP over stdio. It serves six
+tools — `search_titles`, `get_title`, `list_episodes`, `list_facets`, `get_status` and
+`refresh_catalog`. The search runs on words only until phase C4 adds the embeddings; the
+answers say so (`search_mode: "words"`).
+
+The `tv-guide` script still says that it arrives in phase T1.
 
 The dependencies of the servers are already pinned, even though the code that uses them
 arrives later (`@modelcontextprotocol/server` in C3, `sqlite-vec` in C2 and C4). They are
@@ -49,7 +53,7 @@ npm install
 | --- | --- |
 | `npm run typecheck` | `tsc --noEmit` over `src/`, `tests/` and `scripts/` |
 | `npm test` | `node --test 'tests/**/*.test.ts'` — the whole test suite |
-| `npm run cinema` | starts the Cinema server (from C3 on) |
+| `npm run cinema` | starts the Cinema server (the working folder defaults to `~/.iptv-mcp/cinema`) |
 | `npm run tv-guide` | starts the TV Guide server (from T1 on) |
 | `npm run check-real-data` | parses a real catalogue file and prints the counts |
 | `npm run import-real-data` | imports a real catalogue file and prints the sizes and the times |
@@ -74,9 +78,11 @@ mcp-servers/
       log.ts            file log with levels; masks the URLs
       m3u.ts            reader for the extended M3U format
       permissions.ts    the rights of the files of the working folder
+      refresh.ts        the background refresh: the phase, the progress, the last result
       settings.ts       read, validate and write settings.json
       text.ts           normalisation, language guess, Snowball stemming
       time.ts           absolute times from the provider's own strings
+      tool-kit.ts       the shape of the answers, the cursor
     cinema/
       parser.ts         one catalogue entry
       catalog.ts        films with their variants, series with their episodes
@@ -87,6 +93,21 @@ mcp-servers/
       store.ts          the write path: the rows, the index, the removals
       queue.ts          the queue of the texts that have to be embedded
       import.ts         the import pipeline
+      import-options.ts the types of the import
+      prepare.ts        the titles of the catalogue as the rows that are written
+      config.ts         the settings of the cinema server
+      filters.ts        the filters of a search, as SQL
+      search.ts         the words-only search: the index, the order, the page
+      details.ts        the details of a title and the episodes of a series
+      facets.ts         the values a search may be filtered by
+      status.ts         the state of the server
+      refresh.ts        the background refresh of the catalogue
+      render.ts         the compact text of the answers
+      schemas.ts        the parameters and the answers of the tools
+      descriptions.ts   what the tools tell the model
+      handlers.ts       what the tools do
+      tools.ts          the registration of the six tools
+      server.ts         the entry point: node src/cinema/server.ts --data-dir …
     tv-guide/           (from T1 on)
   tests/
     fixtures/           small hand-made excerpts; no real hosts or keys
@@ -149,7 +170,8 @@ reported in the log and the default is used — the file is never rewritten.
 
 ## Connecting to Sqowe Pilot
 
-From C5 on. The entry looks like this:
+The server speaks MCP over stdio and is ready for the client; the entry in Pilot is checked in
+phase C5. It looks like this:
 
 | Field | Value |
 | --- | --- |
@@ -157,7 +179,7 @@ From C5 on. The entry looks like this:
 | Type | `stdio` |
 | Command | `node` |
 | Args | `<abs path>/mcp-servers/src/cinema/server.ts --data-dir ~/.iptv-mcp/cinema` |
-| Environment | `OPENROUTER_API_KEY=…` |
+| Environment | `OPENROUTER_API_KEY=…` (from C4 on: the key is only needed for the embeddings) |
 | Tool policy | `allow-reads` |
 
 ## Rules of this folder

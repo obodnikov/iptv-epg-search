@@ -1,0 +1,9 @@
+#EXTM3U
+#EXTINF:-1 genres="Драма" rating="8" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" group-title="Сериалы", Сериал один S01E01
+http://example.invalid/ep1.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="8" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" group-title="Сериалы", Сериал один S01E02
+http://example.invalid/ep2.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="8" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" group-title="Сериалы", Сериал один S02E01
+http://example.invalid/ep3.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="7" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" group-title="Сериалы", Сериал два S01E01
+http://example.invalid/ep4.m3u8?token=KEY

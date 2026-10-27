@@ -277,6 +277,39 @@ export function withTransaction<T>(db: Db, fn: () => T): T {
 }
 
 /**
+ * Run a function inside a read transaction.
+ *
+ * The function sees one snapshot of the database: a writer that commits
+ * in the middle of it does not change what the function reads. That is
+ * what a search needs: the number of the titles and the page of the
+ * titles have to belong to the same catalogue.
+ *
+ * The transaction is deferred: it takes no write lock, and in WAL mode a
+ * reader never blocks the writer.
+ */
+export function withSnapshot<T>(db: Db, fn: () => T): T {
+  if (db.handle.isTransaction) return fn();
+
+  db.exec('BEGIN DEFERRED;');
+  let committed = false;
+  try {
+    const result = fn();
+    db.exec('COMMIT;');
+    committed = true;
+    return result;
+  } catch (error) {
+    if (!committed) {
+      try {
+        db.exec('ROLLBACK;');
+      } catch {
+        // The transaction may already be gone.
+      }
+    }
+    throw error;
+  }
+}
+
+/**
  * Add a column to a table when it is not there yet.
  *
  * The migrations of the servers are idempotent: they run on every start, on

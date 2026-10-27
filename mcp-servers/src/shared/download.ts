@@ -79,6 +79,14 @@ export interface RawMeta {
   bytes: number;
   /** sha256 of the URL: the URL itself is never written down. */
   url_hash: string;
+  /**
+   * sha256 of the settings that change what is imported.
+   *
+   * A download that did not change is not imported again — unless the
+   * settings changed too, because then the database holds something else
+   * than the provider would send.
+   */
+  settings_hash?: string;
 }
 
 /**
@@ -513,6 +521,9 @@ export async function readRawMeta(metaPath: string): Promise<RawMeta | null> {
       sha256: meta.sha256,
       bytes: typeof meta.bytes === 'number' ? meta.bytes : 0,
       url_hash: typeof meta.url_hash === 'string' ? meta.url_hash : '',
+      ...(typeof meta.settings_hash === 'string'
+        ? { settings_hash: meta.settings_hash }
+        : {}),
     };
   } catch {
     return null;

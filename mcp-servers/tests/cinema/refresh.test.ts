@@ -11,6 +11,7 @@ import { fixture } from '../fixtures/load.ts';
 import { testDatabase } from '../helpers.ts';
 
 const catalogue = fixture('import-a.m3u');
+const broken = fixture('cinema-broken.m3u');
 
 let server: Server;
 let origin = '';
@@ -21,6 +22,11 @@ before(async () => {
     if (path === '/catalogue.m3u') {
       response.writeHead(200, { 'Content-Type': 'audio/x-mpegurl' });
       response.end(catalogue);
+      return;
+    }
+    if (path === '/broken.m3u') {
+      response.writeHead(200, { 'Content-Type': 'audio/x-mpegurl' });
+      response.end(broken);
       return;
     }
     if (path === '/login') {
@@ -162,6 +168,158 @@ describe('refreshCatalog', () => {
 
       const after = test.db.get<{ found: number }>('SELECT count(*) AS found FROM titles');
       assert.equal(after?.found, before?.found);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('writes nothing when the file of the provider did not change', async () => {
+    const test = testDatabase();
+    try {
+      applyCinemaSchema(test.db);
+
+      const first = await refreshCatalog(test.db, test.dir, options(`${origin}/catalogue.m3u`));
+      assert.equal(first.ok, true);
+      assert.equal(first.unchanged, false);
+      assert.equal(first.titles, 3);
+
+      const second = await refreshCatalog(test.db, test.dir, options(`${origin}/catalogue.m3u`));
+      assert.equal(second.ok, true);
+      assert.equal(second.unchanged, true);
+      assert.equal(second.titles, 0);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('writes the catalogue anyway when the caller insists', async () => {
+    const test = testDatabase();
+    try {
+      applyCinemaSchema(test.db);
+
+      await refreshCatalog(test.db, test.dir, options(`${origin}/catalogue.m3u`));
+      const second = await refreshCatalog(
+        test.db,
+        test.dir,
+        options(`${origin}/catalogue.m3u`, { force: true }),
+      );
+
+      assert.equal(second.ok, true);
+      assert.equal(second.unchanged, false);
+      assert.equal(second.titles, 3);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('reports the phase of the refresh', async () => {
+    const test = testDatabase();
+    const phases: string[] = [];
+    try {
+      applyCinemaSchema(test.db);
+
+      await refreshCatalog(
+        test.db,
+        test.dir,
+        options(`${origin}/catalogue.m3u`, {
+          onPhase: (phase) => phases.push(phase),
+        }),
+      );
+
+      assert.deepEqual(phases, ['downloading', 'importing']);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('imports the catalogue when the database holds none', async () => {
+    const test = testDatabase();
+    try {
+      applyCinemaSchema(test.db);
+
+      // The first refresh fills the database and writes the metadata of
+      // the download.
+      await refreshCatalog(test.db, test.dir, options(`${origin}/catalogue.m3u`));
+      assert.equal(
+        test.db.get<{ found: number }>('SELECT count(*) AS found FROM titles')?.found,
+        3,
+      );
+
+      // The database is wiped, the metadata of the download stays: the
+      // file of the provider did not change, but the catalogue has to be
+      // written again.
+      test.db.run('DELETE FROM titles');
+      test.db.run('DELETE FROM titles_fts');
+
+      const outcome = await refreshCatalog(test.db, test.dir, options(`${origin}/catalogue.m3u`));
+      assert.equal(outcome.ok, true);
+      assert.equal(outcome.unchanged, false);
+      assert.equal(outcome.titles, 3);
+      assert.equal(
+        test.db.get<{ found: number }>('SELECT count(*) AS found FROM titles')?.found,
+        3,
+      );
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('imports the catalogue again when the settings changed', async () => {
+    const test = testDatabase();
+    try {
+      applyCinemaSchema(test.db);
+
+      const first = await refreshCatalog(test.db, test.dir, options(`${origin}/catalogue.m3u`));
+      assert.equal(first.titles, 3);
+
+      // The file of the provider did not change, but the settings say that
+      // a category is not loaded any more: the catalogue has to be written
+      // again.
+      const second = await refreshCatalog(
+        test.db,
+        test.dir,
+        options(`${origin}/catalogue.m3u`, { excludeCategories: ['Наши фильмы'] }),
+      );
+      assert.equal(second.ok, true);
+      assert.equal(second.unchanged, false);
+      assert.equal(second.titles, 2);
+
+      // The same settings again: nothing changes now.
+      const third = await refreshCatalog(
+        test.db,
+        test.dir,
+        options(`${origin}/catalogue.m3u`, { excludeCategories: ['Наши фильмы'] }),
+      );
+      assert.equal(third.ok, true);
+      assert.equal(third.unchanged, true);
+      assert.equal(third.titles, 0);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('does not remember a catalogue that could not be imported', async () => {
+    const test = testDatabase();
+    try {
+      applyCinemaSchema(test.db);
+
+      // The file of the provider is a catalogue, but it holds no title:
+      // the import fails after the download worked.
+      const first = await refreshCatalog(test.db, test.dir, options(`${origin}/broken.m3u`));
+      assert.equal(first.ok, false);
+      assert.match(first.error ?? '', /no title/);
+
+      // The hash of the file is not written down: the next refresh must
+      // try again instead of believing that the catalogue is already in
+      // the database.
+      const second = await refreshCatalog(test.db, test.dir, options(`${origin}/broken.m3u`));
+      assert.equal(second.ok, false);
+      assert.equal(second.unchanged, false);
+
+      // The good catalogue is imported after all.
+      const third = await refreshCatalog(test.db, test.dir, options(`${origin}/catalogue.m3u`));
+      assert.equal(third.ok, true);
+      assert.equal(third.titles, 3);
     } finally {
       test.cleanup();
     }

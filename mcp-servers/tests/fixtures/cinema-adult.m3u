@@ -1,0 +1,9 @@
+#EXTM3U
+#EXTINF:5760 genres="Драма" rating="7" year="2024" country="France" director="Julien Seri" added="2026-05-03 13:08:59+03:00" group-title="Зарубежные фильмы", Кали
+#EXTIMG:http://example.invalid/screenshots/81/8080.jpg
+#EXTDESC:Лиза, она же Кали, когда-то была рекрутом в спецназе. Расследование убийства в горах.
+http://example.invalid/film1.m3u8?token=KEY
+#EXTINF:-1 genres="Эротические студии" rating="5" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" censored="1" group-title="Эротика (18+)", Ночной сериал S01E01
+http://example.invalid/adult1.m3u8?token=KEY
+#EXTINF:-1 genres="Драма" rating="8" year="2026" duration="44" country="Россия" added="2026-05-01 03:17:27+03:00" censored="0" group-title="Мультсериалы", Частые побочные явления S01E01
+http://example.invalid/cartoons1.m3u8?token=KEY
