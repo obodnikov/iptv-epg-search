@@ -13,11 +13,15 @@ import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, type CallToolResult, type McpServer } from '@modelcontextprotocol/server';
 
 import { openDatabase, type Db } from '../../src/shared/db.ts';
+import { createFakeEmbedder, type TextEmbedder } from '../../src/shared/embeddings.ts';
 import { Logger } from '../../src/shared/log.ts';
 import { RefreshRunner } from '../../src/shared/refresh.ts';
 import { SettingsStore } from '../../src/shared/settings.ts';
+import { ensureVectorSchema } from '../../src/shared/vectors.ts';
 import { CINEMA_SETTINGS_SPEC, CINEMA_SETTINGS_TEMPLATE } from '../../src/cinema/config.ts';
+import { createEmbedder, type Embedder } from '../../src/cinema/embedder.ts';
 import { importCatalogText, type ImportOptions } from '../../src/cinema/import.ts';
+import { QueryCache } from '../../src/cinema/query-cache.ts';
 import { createCinemaServer } from '../../src/cinema/server.ts';
 import { createCinemaRefresh } from '../../src/cinema/refresh.ts';
 import { applyCinemaSchema } from '../../src/cinema/schema.ts';
@@ -31,10 +35,16 @@ export interface CinemaHarness {
   dir: string;
   /** The path of the settings file. */
   settingsPath: string;
+  /** The client of the embedding service. */
+  embedder: TextEmbedder;
+  /** The worker of the embeddings. */
+  worker: Embedder;
   /** Call a tool of the server. */
   call(name: string, args?: Record<string, unknown>): Promise<CallToolResult>;
   /** Wait until the background refresh is over. */
   waitForRefresh(timeoutMs?: number): Promise<void>;
+  /** Wait until the background embedding run is over. */
+  waitForEmbedding(timeoutMs?: number): Promise<void>;
   /** Close everything and remove the folder. */
   cleanup(): Promise<void>;
 }
@@ -44,6 +54,12 @@ export interface HarnessOptions {
   settings?: Record<string, unknown>;
   /** A catalogue that is imported before the tools are called. */
   catalogue?: string;
+  /**
+   * The client of the embedding service.
+   *
+   * The tests use the fake one: it never reaches the network.
+   */
+  embedder?: TextEmbedder;
 }
 
 /**
@@ -81,6 +97,7 @@ export async function cinemaHarness(options: HarnessOptions = {}): Promise<Cinem
     vectorsPath: join(dir, 'vectors.sqlite'),
   });
   applyCinemaSchema(db);
+  ensureVectorSchema(db);
 
   if (options.catalogue !== undefined) {
     const outcome = importCatalogText(db, options.catalogue, importOptions());
@@ -91,12 +108,23 @@ export async function cinemaHarness(options: HarnessOptions = {}): Promise<Cinem
   const logger = new Logger(join(dir, 'logs', 'server.log'), 'error');
   const runner = new RefreshRunner();
 
+  const embedder = options.embedder ?? createFakeEmbedder();
+  const queryCache = new QueryCache(db);
+  const worker = createEmbedder({
+    db,
+    dataDir: dir,
+    settings,
+    logger,
+    embedder,
+  });
+
   const refresh = createCinemaRefresh({
     db,
     dataDir: dir,
     settings,
     logger,
     runner,
+    worker,
   });
 
   const server = createCinemaServer({
@@ -106,6 +134,9 @@ export async function cinemaHarness(options: HarnessOptions = {}): Promise<Cinem
     logger,
     runner,
     refresh,
+    client: embedder,
+    queryCache,
+    worker,
   });
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -129,6 +160,24 @@ export async function cinemaHarness(options: HarnessOptions = {}): Promise<Cinem
     const progress = runner.progress();
     throw new Error(
       `the refresh did not finish in ${timeoutMs} ms (phase ${progress.phase}, ${progress.elapsedMs} ms)`,
+    );
+  }
+
+  /**
+   * Wait until the background embedding run is over.
+   *
+   * A run that does not settle is a failure: the test would go on with a
+   * background task that writes into the folder.
+   */
+  async function waitForEmbedding(timeoutMs = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (!worker.status().running) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const status = worker.status();
+    throw new Error(
+      `the embedding run did not finish in ${timeoutMs} ms (phase ${status.phase}, ${status.done} texts)`,
     );
   }
 
@@ -173,8 +222,11 @@ export async function cinemaHarness(options: HarnessOptions = {}): Promise<Cinem
     db,
     dir,
     settingsPath,
+    embedder,
+    worker,
     call,
     waitForRefresh,
+    waitForEmbedding,
     cleanup,
   };
 }

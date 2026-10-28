@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { fixture } from '../fixtures/load.ts';
+import { putVector } from '../../src/shared/vectors.ts';
 import { cinemaHarness, structured, textOf, type CinemaHarness } from './harness.ts';
 
 const catalogue = fixture('import-a.m3u');
@@ -67,11 +68,12 @@ function items(result: Awaited<ReturnType<CinemaHarness['call']>>): Record<strin
 }
 
 describe('the tools of the cinema server', () => {
-  it('registers the six tools of the design', async () => {
+  it('registers the seven tools of the design', async () => {
     await withServer(async (harness) => {
       const tools = await harness.client.listTools();
       const names = tools.tools.map((tool) => tool.name).sort();
       assert.deepEqual(names, [
+        'find_similar_titles',
         'get_status',
         'get_title',
         'list_episodes',
@@ -99,6 +101,7 @@ describe('the tools of the cinema server', () => {
 
       for (const name of [
         'search_titles',
+        'find_similar_titles',
         'get_title',
         'list_episodes',
         'list_facets',
@@ -708,6 +711,194 @@ describe('refresh_catalog', () => {
       assert.match(String(data['message']), /background/);
 
       await harness.waitForRefresh();
+    });
+  });
+});
+
+describe('the search by meaning', () => {
+  it('says that it searched by the words when there are no vectors', async () => {
+    await withServer(async (harness) => {
+      const result = await harness.call('search_titles', { query: 'Кали' });
+
+      assert.equal(structured(result)['search_mode'], 'words');
+    });
+  });
+
+  it('says that it searched by the words and by the meaning when there are vectors', async () => {
+    await withServer(async (harness) => {
+      harness.worker.start();
+      await harness.waitForEmbedding();
+
+      const result = await harness.call('search_titles', { query: 'Кали' });
+      const data = structured(result);
+
+      assert.equal(data['search_mode'], 'words+meaning');
+      // The union of the word matches and the titles that have a vector.
+      assert.equal(data['total'], 3);
+    });
+  });
+
+  it('finds a title by the meaning when no word matches', async () => {
+    await withServer(async (harness) => {
+      harness.worker.start();
+      await harness.waitForEmbedding();
+
+      const result = await harness.call('search_titles', {
+        query: 'одиночество в космосе',
+      });
+      const data = structured(result);
+
+      assert.equal(data['search_mode'], 'words+meaning');
+      // The words match nothing, but the titles with a vector are there.
+      assert.equal(data['total'], 3);
+      assert.ok((items(result).length ?? 0) > 0);
+    });
+  });
+
+  it('keeps the order of the request when another order is asked for', async () => {
+    await withServer(async (harness) => {
+      harness.worker.start();
+      await harness.waitForEmbedding();
+
+      const result = await harness.call('search_titles', {
+        query: 'Кали',
+        sort: 'rating',
+      });
+
+      // Another order asks for something else than the meaning.
+      assert.equal(structured(result)['search_mode'], 'words');
+      // The words still narrow the result down.
+      assert.equal(structured(result)['total'], 1);
+      assert.equal(items(result)[0]?.['title'], 'Кали');
+    });
+  });
+});
+
+describe('find_similar_titles', () => {
+  it('answers with the titles that are like a title of the catalogue', async () => {
+    await withServer(async (harness) => {
+      harness.worker.start();
+      await harness.waitForEmbedding();
+
+      const search = await harness.call('search_titles', { keywords: ['Кали'] });
+      const source = String(items(search)[0]?.['title_id']);
+
+      const result = await harness.call('find_similar_titles', { title_id: source });
+      const data = structured(result);
+
+      assert.equal(data['search_mode'], 'words+meaning');
+      assert.equal(data['source'], source);
+      // The title itself is never in the answer.
+      assert.equal(
+        (items(result) as Record<string, unknown>[]).some(
+          (item) => item['title_id'] === source,
+        ),
+        false,
+      );
+    });
+  });
+
+  it('answers with the titles that are like a description', async () => {
+    await withServer(async (harness) => {
+      harness.worker.start();
+      await harness.waitForEmbedding();
+
+      const result = await harness.call('find_similar_titles', {
+        description: 'a quiet french drama about a family',
+      });
+      const data = structured(result);
+
+      assert.equal(data['search_mode'], 'words+meaning');
+      assert.ok((items(result).length ?? 0) > 0);
+    });
+  });
+
+  it('asks for a title or a description', async () => {
+    await withServer(async (harness) => {
+      const result = await harness.call('find_similar_titles', {});
+
+      assert.equal(result.isError, true);
+      assert.match(textOf(result), /title_id/);
+    });
+  });
+
+  it('answers with an error for an unknown title', async () => {
+    await withServer(async (harness) => {
+      const result = await harness.call('find_similar_titles', {
+        title_id: '0000000000000000',
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(textOf(result), /No title with the id/);
+    });
+  });
+
+  it('falls back to the genres when there are no vectors', async () => {
+    await withServer(async (harness) => {
+      const search = await harness.call('search_titles', { keywords: ['Кали'] });
+      const source = String(items(search)[0]?.['title_id']);
+
+      const result = await harness.call('find_similar_titles', { title_id: source });
+      const data = structured(result);
+
+      assert.equal(data['search_mode'], 'words');
+      // Only the series shares a genre with "Кали".
+      assert.equal(data['total'], 1);
+    });
+  });
+});
+
+describe('get_status and the embeddings', () => {
+  it('tells that the embeddings are switched off', async () => {
+    await withServer(async (harness) => {
+      const result = await harness.call('get_status');
+      const data = structured(result);
+      const embedding = data['embedding'] as Record<string, unknown>;
+
+      assert.equal(embedding['enabled'], true);
+      assert.equal(embedding['running'], false);
+      assert.equal(data['search_mode'], 'words');
+    });
+  });
+
+  it('tells that the search by meaning is there', async () => {
+    await withServer(async (harness) => {
+      harness.worker.start();
+      await harness.waitForEmbedding();
+
+      const result = await harness.call('get_status');
+      const data = structured(result);
+      const vectors = data['vectors'] as Record<string, unknown>;
+
+      assert.equal(vectors['done'], 3);
+      assert.equal(vectors['meaning'], true);
+      assert.equal(data['search_mode'], 'words+meaning');
+    });
+  });
+
+  it('tells that the search by meaning is there after a restart', async () => {
+    await withServer(async (harness) => {
+      // The vectors of an earlier run are in the database, but this process
+      // has not embedded anything itself.
+      const rows = harness.db.all<{ text_hash: string }>(
+        'SELECT text_hash FROM titles WHERE text_hash IS NOT NULL',
+      );
+      for (const row of rows) {
+        putVector(harness.db, {
+          textHash: row.text_hash,
+          model: 'BAAI/bge-m3',
+          embedding: new Float32Array([1, 0]),
+          createdAt: 1_800_000_000_000,
+        });
+      }
+
+      const result = await harness.call('get_status');
+      const data = structured(result);
+      const vectors = data['vectors'] as Record<string, unknown>;
+
+      assert.equal(vectors['done'], 3);
+      assert.equal(vectors['meaning'], true);
+      assert.equal(data['search_mode'], 'words+meaning');
     });
   });
 });

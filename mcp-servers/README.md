@@ -19,14 +19,16 @@ working folder. The design is in [`docs/design/`](docs/design/):
 | C1 | Shared modules and the catalogue parser | done |
 | C2 | Storage and import | done |
 | C3 | MCP server and tools (words only) | done (2026-10-27) |
-| C4 | Embeddings and search by meaning | not started |
+| C4 | Embeddings and search by meaning | done (2026-10-27) |
 | C5 | Pilot connection and manual checks | not started |
 | T1–T6 | TV Guide server | not started |
 
-The Cinema server runs: `npm run cinema` starts it and speaks MCP over stdio. It serves six
-tools — `search_titles`, `get_title`, `list_episodes`, `list_facets`, `get_status` and
-`refresh_catalog`. The search runs on words only until phase C4 adds the embeddings; the
-answers say so (`search_mode: "words"`).
+The Cinema server runs: `npm run cinema` starts it and speaks MCP over stdio. It serves seven
+tools — `search_titles`, `find_similar_titles`, `get_title`, `list_episodes`, `list_facets`,
+`get_status` and `refresh_catalog`. The search mixes the words and the meaning of the query: it
+needs the vectors of the catalogue, which the embedding worker builds in the background.
+Without them the search falls back to the words alone, and the answers say so
+(`search_mode: "words"`).
 
 The `tv-guide` script still says that it arrives in phase T1.
 
@@ -57,6 +59,11 @@ npm install
 | `npm run tv-guide` | starts the TV Guide server (from T1 on) |
 | `npm run check-real-data` | parses a real catalogue file and prints the counts |
 | `npm run import-real-data` | imports a real catalogue file and prints the sizes and the times |
+| `npm run embed-real-data` | imports a real catalogue file, embeds every text and prints the times |
+
+The scripts that need the key of the embedding service load it from the `.env` file of the
+repository (or of `mcp-servers/`); a variable that is already in the environment wins. The
+file is git-ignored.
 
 ## Layout
 
@@ -72,6 +79,7 @@ mcp-servers/
       country-table.ts  the data behind countries.ts
       db.ts             node:sqlite, sqlite-vec, WAL, the meta table, the transactions
       download.ts       GET with timeout, size limit and User-Agent
+      embeddings.ts     the OpenRouter client: batches, retries, the fake for the tests
       hash.ts           the sha256 of the servers
       links.ts          sanitizeUrl (ported) and URL masking
       lock.ts           the refresh lock of the working folder
@@ -83,6 +91,7 @@ mcp-servers/
       text.ts           normalisation, language guess, Snowball stemming
       time.ts           absolute times from the provider's own strings
       tool-kit.ts       the shape of the answers, the cursor
+      vectors.ts        the tables of the vectors database and the vectors themselves
     cinema/
       parser.ts         one catalogue entry
       catalog.ts        films with their variants, series with their episodes
@@ -97,7 +106,14 @@ mcp-servers/
       prepare.ts        the titles of the catalogue as the rows that are written
       config.ts         the settings of the cinema server
       filters.ts        the filters of a search, as SQL
-      search.ts         the words-only search: the index, the order, the page
+      items.ts          the rows of a title and the items of a list
+      search.ts         the search: the candidates, the order, the page
+      search-types.ts   the shapes of a search
+      words.ts          the words of a search: the index, the bm25, the order
+      blend.ts          the candidates of a search and the mix of their scores
+      similar.ts        the titles that are like a given one
+      embedder.ts       the background worker that embeds the texts of the queue
+      query-cache.ts    the vectors of the queries
       details.ts        the details of a title and the episodes of a series
       facets.ts         the values a search may be filtered by
       status.ts         the state of the server
@@ -105,8 +121,11 @@ mcp-servers/
       render.ts         the compact text of the answers
       schemas.ts        the parameters and the answers of the tools
       descriptions.ts   what the tools tell the model
-      handlers.ts       what the tools do
-      tools.ts          the registration of the six tools
+      tool-context.ts   what the tools need and the answers they share
+      handler-search.ts the search_titles tool
+      handler-similar.ts the find_similar_titles tool
+      handlers.ts       the other five tools
+      tools.ts          the registration of the seven tools
       server.ts         the entry point: node src/cinema/server.ts --data-dir …
     tv-guide/           (from T1 on)
   tests/
@@ -115,6 +134,7 @@ mcp-servers/
   scripts/
     check-real-data.ts  counts of a real catalogue file
     import-real-data.ts imports a real catalogue file and prints the sizes and the times
+    embed-real-data.ts  imports a real catalogue file, embeds it and prints the times
   docs/design/          the design documents
 ```
 
@@ -128,8 +148,9 @@ Each server takes a `--data-dir`. The defaults are `~/.iptv-mcp/cinema` and
   settings.json        the only file the owner edits
   raw/                 last good download of the source + meta.json
   data.sqlite          catalogue tables and the keyword index (from C2 on)
-  vectors.sqlite       embeddings (from C4 on)
+  vectors.sqlite       the embeddings of the titles and of the queries (from C4 on)
   refresh.lock         present while a refresh runs
+  embed.lock           present while the embedding run goes on
   logs/server.log
 ```
 
@@ -168,6 +189,12 @@ The common keys are documented in
 A URL must parse and use `http:` or `https:`; an empty value means "not set". A wrong value is
 reported in the log and the default is used — the file is never rewritten.
 
+The key of the embedding service is not in the settings file: it comes from the environment
+(`OPENROUTER_API_KEY`, the name is in `embeddings.apiKeyEnv`). For the local runs the npm
+scripts read it from the `.env` file of the repository; for Sqowe Pilot it goes into the
+**Environment** field of the server entry. Without the key the server still works: the search
+falls back to the words and says so.
+
 ## Connecting to Sqowe Pilot
 
 The server speaks MCP over stdio and is ready for the client; the entry in Pilot is checked in
@@ -179,7 +206,7 @@ phase C5. It looks like this:
 | Type | `stdio` |
 | Command | `node` |
 | Args | `<abs path>/mcp-servers/src/cinema/server.ts --data-dir ~/.iptv-mcp/cinema` |
-| Environment | `OPENROUTER_API_KEY=…` (from C4 on: the key is only needed for the embeddings) |
+| Environment | `OPENROUTER_API_KEY=…` (the key is only needed for the embeddings) |
 | Tool policy | `allow-reads` |
 
 ## Rules of this folder

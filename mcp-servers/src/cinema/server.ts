@@ -21,10 +21,14 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { DEFAULT_DATA_DIRS, ensureDataDir, parseArgs } from '../shared/args.ts';
 import { openDatabase, type Db } from '../shared/db.ts';
+import { createOpenRouterEmbedder, type TextEmbedder } from '../shared/embeddings.ts';
 import { Logger } from '../shared/log.ts';
 import { RefreshRunner } from '../shared/refresh.ts';
 import { SettingsStore } from '../shared/settings.ts';
+import { ensureVectorSchema } from '../shared/vectors.ts';
 import { CINEMA_SETTINGS_SPEC, readCinemaSettings } from './config.ts';
+import { createEmbedder, type Embedder } from './embedder.ts';
+import { QueryCache } from './query-cache.ts';
 import { createCinemaRefresh, shouldRefreshAtStart, type RefreshStart } from './refresh.ts';
 import { applyCinemaSchema } from './schema.ts';
 import { registerCinemaTools } from './tools.ts';
@@ -55,7 +59,8 @@ export const INSTRUCTIONS = [
   '- Start with `search_titles`. Put a natural description in `query` and exact names (titles, directors, places) in `keywords`. Take category and genre values from `list_facets`.',
   '- `countries` means the country where the film was made.',
   '- "New" or "recently added": `sort="added"` with `added_within_days`.',
-  '- "Something like X": find X with `search_titles`, then call `find_similar_titles` with its `title_id`. That tool arrives with the search by meaning; until then, search with the genres, the country and the director of X.',
+  '- "Something like X": call `find_similar_titles` with the title_id of X, or with a description of a film that is not in the catalogue.',
+  '- The search by meaning needs the key of the embedding service in the environment. Without it the search falls back to the words and says so (`search_mode`).',
   '- Lists contain no play links. Call `get_title` (film) or `list_episodes` (series) when the user wants to watch.',
   '- `rating` is the provider\'s 0-10 score. When judging whether a title is worth watching, say which part comes from the provider and which from your own knowledge.',
   '- If a TV Guide server is also connected, it covers broadcast TV. For "where can I watch X", ask both.',
@@ -71,6 +76,12 @@ export interface CinemaServerContext {
   runner: RefreshRunner;
   /** Starts a refresh in the background. */
   refresh: (force: boolean) => RefreshStart;
+  /** The client of the embedding service. */
+  client: TextEmbedder;
+  /** The cache of the vectors of the queries. */
+  queryCache: QueryCache;
+  /** The background worker of the embeddings. */
+  worker: Embedder;
 }
 
 /**
@@ -136,6 +147,8 @@ export function main(argv: string[]): void {
 
   try {
     applyCinemaSchema(db);
+    // The tables of the vectors: the search by meaning needs them.
+    ensureVectorSchema(db);
   } catch (error) {
     logger.error('the schema of the catalogue could not be prepared', {
       error: error instanceof Error ? error.message : String(error),
@@ -145,12 +158,28 @@ export function main(argv: string[]): void {
   }
 
   const runner = new RefreshRunner();
+
+  // The client of the embedding service and the worker that empties the
+  // queue of the texts that have to be embedded.
+  const client = createOpenRouterEmbedder(
+    () => readCinemaSettings(settings.settings()).embeddings,
+  );
+  const queryCache = new QueryCache(db);
+  const worker = createEmbedder({
+    db,
+    dataDir,
+    settings,
+    logger,
+    embedder: client,
+  });
+
   const refresh = createCinemaRefresh({
     db,
     dataDir,
     settings,
     logger,
     runner,
+    worker,
   });
 
   const ctx: CinemaServerContext = {
@@ -160,6 +189,9 @@ export function main(argv: string[]): void {
     logger,
     runner,
     refresh,
+    client,
+    queryCache,
+    worker,
   };
 
   // The refresh at the start runs in the background: the tools answer from
@@ -171,6 +203,17 @@ export function main(argv: string[]): void {
     refresh(false);
   } else {
     logger.info('no refresh at the start', { reason: decision.reason });
+  }
+
+  // The texts that have to be embedded are embedded in the background: the
+  // tools answer from whatever is in the database.
+  const pending =
+    db.get<{ found: number }>(
+      'SELECT count(*) AS found FROM vector_queue',
+    )?.found ?? 0;
+  if (pending > 0) {
+    const started = worker.start();
+    logger.info('the embedding run was asked for', { pending, status: started });
   }
 
   serveStdio(() => createCinemaServer(ctx), {

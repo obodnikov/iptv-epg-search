@@ -28,6 +28,99 @@ export function charLength(text: string): number {
 }
 
 /**
+ * One text of the queue.
+ */
+export interface QueuedText {
+  /** The hash of the embedding text. */
+  textHash: string;
+  /** The text that has to be embedded. */
+  text: string;
+}
+
+/**
+ * The next texts of the queue of a model.
+ *
+ * The text comes from the title it belongs to: the queue holds the hash of
+ * the text, not the text itself. A title that is gone is skipped, and the
+ * two titles that share a text are one row.
+ *
+ * @param model The model the texts have to be embedded for.
+ * @param minTextChars Texts shorter than this are only searched by words.
+ * @param limit How many texts to take at most.
+ */
+export function nextQueuedTexts(
+  db: Db,
+  model: string,
+  minTextChars: number,
+  limit: number,
+): QueuedText[] {
+  const rows = db.all<{ text_hash: string; text: string }>(
+    `SELECT DISTINCT q.text_hash AS text_hash, t.embed_text AS text
+       FROM vector_queue q
+       JOIN titles t ON t.text_hash = q.text_hash
+      WHERE q.model = ?
+        AND t.removed_at IS NULL
+        AND t.embed_text IS NOT NULL
+        AND t.embed_text != ''
+        AND length(t.embed_text) >= ?
+      LIMIT ?`,
+    model,
+    minTextChars,
+    limit,
+  );
+
+  return rows.map((row) => ({ textHash: row.text_hash, text: row.text }));
+}
+
+/**
+ * Remove the texts of the queue that were embedded.
+ *
+ * @returns the number of the rows that were removed.
+ */
+export function removeQueuedTexts(
+  db: Db,
+  model: string,
+  hashes: string[],
+): number {
+  if (hashes.length === 0) return 0;
+  const marks = hashes.map(() => '?').join(', ');
+  return db.run(
+    `DELETE FROM vector_queue WHERE model = ? AND text_hash IN (${marks})`,
+    model,
+    ...hashes,
+  ).changes;
+}
+
+/**
+ * Remove the queue rows of the models that are not the active one.
+ *
+ * The queue holds the work of one model: the rows of another model would
+ * never be taken.
+ *
+ * @returns the number of the rows that were removed.
+ */
+export function dropForeignQueueRows(db: Db, model: string): number {
+  return db.run('DELETE FROM vector_queue WHERE model != ?', model).changes;
+}
+
+/**
+ * Remove the queue rows of texts that have no title any more.
+ *
+ * @returns the number of the rows that were removed.
+ */
+export function dropOrphanQueueRows(db: Db, model: string): number {
+  return db.run(
+    `DELETE FROM vector_queue
+      WHERE model = ?
+        AND text_hash NOT IN (
+          SELECT text_hash FROM titles
+           WHERE removed_at IS NULL AND text_hash IS NOT NULL AND text_hash != ''
+        )`,
+    model,
+  ).changes;
+}
+
+/**
  * Put one text into the queue.
  *
  * A text that is shorter than `embeddings.minTextChars` is only searched by
@@ -76,7 +169,10 @@ export function pruneVectorQueue(db: Db): number {
  *
  * Nothing happens when the vectors are not there yet.
  */
-export function queueMissingVectors(db: Db, options: WriteOptions): number {
+export function queueMissingVectors(
+  db: Db,
+  options: Pick<WriteOptions, 'embeddingModel' | 'minTextChars' | 'now'>,
+): number {
   if (!db.hasVectors) return 0;
 
   const table = db.get<{ found: number }>(

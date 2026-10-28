@@ -3,9 +3,11 @@
  *
  * Six tools (design: cinema-server.md §6):
  *
- * - `search_titles` — the main search;
+ * - `search_titles` — the main search (`handler-search.ts`);
+ * - `find_similar_titles` — the titles that are like a given one
+ *   (`handler-similar.ts`);
  * - `get_title` — the details and the play links of a film;
- * - `list_episodes` — the episodes of a season of a series;
+ * - `list_episodes` — the episodes of a series;
  * - `list_facets` — the values a search may be filtered by;
  * - `get_status` — the state of the server;
  * - `refresh_catalog` — the background refresh of the catalogue.
@@ -19,303 +21,23 @@
 
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
-import { type Db } from '../shared/db.ts';
-import { type Logger } from '../shared/log.ts';
-import { type SettingsStore } from '../shared/settings.ts';
-import { type RefreshRunner } from '../shared/refresh.ts';
 import { maskUrl } from '../shared/links.ts';
-import {
-  cursorMismatchMessage,
-  decodeCursor,
-  encodeCursor,
-  errorResult,
-  okResult,
-} from '../shared/tool-kit.ts';
-import { readCinemaSettings, type CinemaSettings } from './config.ts';
-import {
-  categoryValues,
-  emptyFilters,
-  genreValues,
-  unknownValues,
-  valueNames,
-  type SearchFilters,
-  type SortOrder,
-} from './filters.ts';
-import { searchSignature, searchTitles, type SearchRequest } from './search.ts';
+import { cursorMismatchMessage, decodeCursor, encodeCursor, errorResult, okResult } from '../shared/tool-kit.ts';
 import { firstSeasonOf, getTitleDetails, listEpisodes } from './details.ts';
 import { listFacets } from './facets.ts';
 import { lastRefresh, statusCounts, vectorStatus } from './status.ts';
-import { renderDetails, renderEpisodes, renderFacets, renderList } from './render.ts';
-import type { RefreshStart } from './refresh.ts';
+import { renderDetails, renderEpisodes, renderFacets } from './render.ts';
+import {
+  adultRefused,
+  catalogueEmpty,
+  notConfigured,
+  settingsOf,
+  type CinemaToolContext,
+} from './tool-context.ts';
 
-
-/**
- * The most titles a list may hold.
- *
- * The design says 50 (cinema-server.md §6.1); the schema of the tools
- * says the same, and the setting `search.maxLimit` may not promise more.
- */
-const MAX_LIMIT = 50;
-
-/** Everything the tools of the cinema server need. */
-export interface CinemaToolContext {
-  db: Db;
-  /** The working folder of the server. */
-  dataDir: string;
-  settings: SettingsStore;
-  logger: Logger;
-  runner: RefreshRunner;
-  /** Starts a refresh in the background. */
-  refresh: (force: boolean) => RefreshStart;
-}
-
-/**
- * The settings of the server, as they are now.
- */
-function settingsOf(ctx: CinemaToolContext): CinemaSettings {
-  return readCinemaSettings(ctx.settings.settings());
-}
-
-/**
- * The number of the titles that are in the catalogue right now.
- */
-function liveTitleCount(db: Db): number {
-  return (
-    db.get<{ found: number }>(
-      'SELECT count(*) AS found FROM titles WHERE removed_at IS NULL',
-    )?.found ?? 0
-  );
-}
-
-/**
- * The answer when the URL of the provider is not set.
- *
- * The message names the file the owner has to fill in.
- */
-function notConfigured(ctx: CinemaToolContext): CallToolResult {
-  return errorResult(`Cinema URL is not set: edit ${ctx.settings.path}`);
-}
-
-/**
- * The answer when the catalogue is empty.
- *
- * @returns the answer, or null when the catalogue holds something.
- */
-function catalogueEmpty(ctx: CinemaToolContext): CallToolResult | null {
-  if (liveTitleCount(ctx.db) > 0) return null;
-
-  const progress = ctx.runner.progress();
-  if (progress.running) {
-    return errorResult(
-      `The catalogue is empty: a refresh is running (${progress.phase}). Try again in about a minute.`,
-    );
-  }
-  return errorResult(
-    'The catalogue is empty. Run refresh_catalog to import it, then try again.',
-  );
-}
-
-/**
- * How many valid values an error message names.
- *
- * The catalogue of a provider holds dozens of genres and countries: the
- * whole list in every error would fill the context of the model. The rest
- * is in `list_facets`.
- */
-const MAX_LISTED_VALUES = 20;
-
-/**
- * The names of the valid values, shortened when there are many.
- */
-function listedValues(values: string[]): string {
-  if (values.length <= MAX_LISTED_VALUES) return values.join(', ');
-  return `${values.slice(0, MAX_LISTED_VALUES).join(', ')}, … (call list_facets for all of them)`;
-}
-
-/**
- * Check that the genres and the categories of a search are values of the
- * catalogue.
- *
- * An unknown value is an error that lists the valid ones: the model must
- * not guess a spelling (design: iptv-mcp-servers.md §8.2).
- */
-function checkFacetValues(
-  ctx: CinemaToolContext,
-  settings: CinemaSettings,
-  genres: string[],
-  categories: string[],
-  excludeGenres: string[],
-): CallToolResult | null {
-  const problems: string[] = [];
-
-  const knownGenres = genreValues(ctx.db, settings.includeAdult);
-  for (const wanted of [genres, excludeGenres]) {
-    if (wanted.length === 0) continue;
-    const missing = unknownValues(wanted, knownGenres);
-    if (missing.length > 0) {
-      problems.push(
-        `Genre '${missing.join("', '")}' not found. Valid: ${listedValues(valueNames(knownGenres))}`,
-      );
-    }
-  }
-
-  if (categories.length > 0) {
-    const known = categoryValues(ctx.db, settings.includeAdult);
-    const missing = unknownValues(categories, known);
-    if (missing.length > 0) {
-      problems.push(
-        `Category '${missing.join("', '")}' not found. Valid: ${listedValues(valueNames(known))}`,
-      );
-    }
-  }
-
-  if (problems.length === 0) return null;
-  return errorResult(problems.join(' '));
-}
-
-/**
- * The answer when a title is adult content and the setting does not allow
- * it.
- *
- * The rule of the design is that adult content is absent unless
- * `includeAdult` is true (design: iptv-mcp-servers.md §11) — in the lists
- * and in the details as well.
- */
-function adultRefused(
-  settings: CinemaSettings,
-  isAdult: boolean,
-): CallToolResult | null {
-  if (!isAdult || settings.includeAdult) return null;
-  return errorResult(
-    'This title is adult content. The setting "includeAdult" is off, so its details and its links are not given.',
-  );
-}
-
-/**
- * The values of a closed set: trimmed and without the empty ones.
- *
- * The values are cleaned once, so that the check and the SQL use the same
- * spelling.
- */
-function cleanValues(values: string[] | undefined): string[] {
-  return (values ?? [])
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-}
-
-/**
- * `search_titles` — the main search.
- */
-export async function searchTitlesTool(
-  ctx: CinemaToolContext,
-  args: {
-    query?: string;
-    keywords?: string[];
-    type?: 'film' | 'series' | 'any';
-    categories?: string[];
-    genres?: string[];
-    exclude_genres?: string[];
-    countries?: string[];
-    year_from?: number;
-    year_to?: number;
-    min_rating?: number;
-    person?: string;
-    max_minutes?: number;
-    added_within_days?: number;
-    sort?: SortOrder;
-    limit?: number;
-    cursor?: string;
-  },
-): Promise<CallToolResult> {
-  const settings = settingsOf(ctx);
-  if (!settings.cinemaUrl) return notConfigured(ctx);
-
-  const empty = catalogueEmpty(ctx);
-  if (empty) return empty;
-
-  const genres = cleanValues(args.genres);
-  const categories = cleanValues(args.categories);
-  const excludeGenres = cleanValues(args.exclude_genres);
-  const facetProblem = checkFacetValues(ctx, settings, genres, categories, excludeGenres);
-  if (facetProblem) return facetProblem;
-
-  const filters: SearchFilters = {
-    ...emptyFilters(),
-    type: args.type ?? 'any',
-    categories,
-    genres,
-    excludeGenres,
-    countries: cleanValues(args.countries),
-    yearFrom: args.year_from ?? null,
-    yearTo: args.year_to ?? null,
-    minRating: args.min_rating ?? null,
-    maxMinutes: args.max_minutes ?? null,
-    addedWithinDays: args.added_within_days ?? null,
-    includeAdult: settings.includeAdult,
-  };
-
-  const query = args.query?.trim() ?? '';
-  const keywords = (args.keywords ?? []).map((keyword) => keyword.trim()).filter(Boolean);
-  const person = args.person?.trim() ?? '';
-  const sort: SortOrder = args.sort ?? 'relevance';
-
-  const request: SearchRequest = {
-    query,
-    keywords,
-    person,
-    filters,
-    sort,
-    limit: 0,
-    offset: 0,
-  };
-
-  const signature = searchSignature(request);
-
-  // The cursor belongs to one search: it may not be used for another one.
-  let offset = 0;
-  if (args.cursor) {
-    const cursor = decodeCursor(args.cursor);
-    if (!cursor) {
-      return errorResult(
-        'This cursor is not readable. Run the search again without a cursor.',
-      );
-    }
-    if (cursor.signature !== signature) {
-      return errorResult(cursorMismatchMessage());
-    }
-    offset = cursor.offset;
-  }
-
-  const limit = Math.min(
-    args.limit ?? settings.search.defaultLimit,
-    settings.search.maxLimit,
-    MAX_LIMIT,
-  );
-
-  const outcome = searchTitles(
-    ctx.db,
-    { ...request, limit, offset },
-    {
-      aliases: settings.countryAliases,
-      snippetChars: settings.search.snippetChars,
-      now: Math.floor(Date.now() / 1000),
-      timezone: settings.timezone,
-    },
-  );
-
-  const nextOffset = offset + outcome.items.length;
-  const nextCursor =
-    nextOffset < outcome.total ? encodeCursor({ offset: nextOffset, signature }) : null;
-
-  const data = {
-    total: outcome.total,
-    search_mode: 'words' as const,
-    items: outcome.items,
-    next_cursor: nextCursor,
-  };
-
-  return okResult(data, renderList(outcome.items, outcome.total, outcome.usedWords));
-}
+export { searchTitlesTool } from './handler-search.ts';
+export { type CinemaToolContext } from './tool-context.ts';
+export { findSimilarTitlesTool } from './handler-similar.ts';
 
 /**
  * `get_title` — the details of one title.
@@ -437,6 +159,18 @@ export async function getStatusTool(ctx: CinemaToolContext): Promise<CallToolRes
   const settings = settingsOf(ctx);
   const progress = ctx.runner.progress();
   const failure = ctx.runner.lastFailure();
+  const embedding = ctx.worker.status();
+
+  // The vectors that are in the database for the active model.
+  const vectors = vectorStatus(ctx.db, settings.embeddings.model, false);
+
+  // The search by meaning is there when the embeddings are on, the client
+  // can embed and there is at least one vector in the database. The number
+  // of the texts of the last run is not the number: the server may have
+  // been started again, and the vectors of the last run are still there.
+  const meaningAvailable =
+    settings.embeddings.enabled && embedding.available && vectors.done > 0;
+  vectors.meaning = meaningAvailable;
 
   const report = {
     settings_path: ctx.settings.path,
@@ -445,8 +179,18 @@ export async function getStatusTool(ctx: CinemaToolContext): Promise<CallToolRes
     settings_issues: ctx.settings.issues(),
     last_refresh: lastRefresh(ctx.db, settings.timezone),
     counts: statusCounts(ctx.db),
-    vectors: vectorStatus(ctx.db, settings.embeddings.model, false),
-    search_mode: 'words' as const,
+    vectors,
+    search_mode: (meaningAvailable ? 'words+meaning' : 'words') as 'words' | 'words+meaning',
+    embedding: {
+      running: embedding.running,
+      phase: embedding.phase,
+      done: embedding.done,
+      pending: embedding.pending,
+      error: embedding.last_error,
+      enabled: embedding.enabled,
+      available: embedding.available,
+      key_present: embedding.key_present,
+    },
     refresh_running: progress.running
       ? {
           running: progress.running,
@@ -488,6 +232,20 @@ export async function getStatusTool(ctx: CinemaToolContext): Promise<CallToolRes
   lines.push(
     `Vectors: ${report.vectors.done} done, ${report.vectors.pending} pending (model ${report.vectors.model})`,
   );
+  if (report.embedding.running) {
+    lines.push(
+      `The embedding run is going on (${report.embedding.phase}, ${report.embedding.done} texts in this run)`,
+    );
+  } else if (!report.embedding.enabled) {
+    lines.push('The embeddings are switched off in the settings.');
+  } else if (!report.embedding.key_present) {
+    lines.push('The key of the embedding service is not in the environment.');
+  } else if (!report.embedding.available) {
+    lines.push('The embedding service cannot be used at the moment.');
+  }
+  if (report.embedding.error) {
+    lines.push(`The last embedding run failed: ${report.embedding.error}`);
+  }
   if (report.refresh_running) {
     lines.push(
       `A refresh is running (${report.refresh_running.phase}, ${report.refresh_running.elapsed_ms} ms)`,

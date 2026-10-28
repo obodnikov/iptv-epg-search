@@ -143,6 +143,7 @@ describe('the names of the tools of the cinema server', () => {
   it('have no write verb in their name', () => {
     for (const name of [
       'search_titles',
+      'find_similar_titles',
       'get_title',
       'list_episodes',
       'list_facets',

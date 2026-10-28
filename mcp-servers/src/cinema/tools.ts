@@ -9,6 +9,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
 import {
+  findSimilarTitlesTool,
   getStatusTool,
   getTitleTool,
   listEpisodesTool,
@@ -18,6 +19,7 @@ import {
   type CinemaToolContext,
 } from './handlers.ts';
 import {
+  FIND_SIMILAR_TITLES_DESCRIPTION,
   GET_STATUS_DESCRIPTION,
   GET_TITLE_DESCRIPTION,
   LIST_EPISODES_DESCRIPTION,
@@ -26,6 +28,8 @@ import {
   SEARCH_TITLES_DESCRIPTION,
 } from './descriptions.ts';
 import {
+  findSimilarTitlesInput,
+  findSimilarTitlesOutput,
   getStatusInput,
   getStatusOutput,
   getTitleInput,
@@ -54,6 +58,18 @@ export function registerCinemaTools(server: McpServer, ctx: CinemaToolContext): 
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) => searchTitlesTool(ctx, args),
+  );
+
+  server.registerTool(
+    'find_similar_titles',
+    {
+      title: 'Find similar titles',
+      description: FIND_SIMILAR_TITLES_DESCRIPTION,
+      inputSchema: findSimilarTitlesInput,
+      outputSchema: findSimilarTitlesOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (args) => findSimilarTitlesTool(ctx, args),
   );
 
   server.registerTool(

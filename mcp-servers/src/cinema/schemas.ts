@@ -140,6 +140,72 @@ export const searchTitlesOutput = z.object({
   next_cursor: z.string().nullable(),
 });
 
+/** The parameters of `find_similar_titles`. */
+export const findSimilarTitlesInput = z.object({
+  title_id: z
+    .string()
+    .optional()
+    .describe(
+      'The id of a title of the catalogue, as the list of search_titles gives it. The titles that are like it are returned.',
+    ),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'A description of a film that is not in the catalogue. The titles that are like it are returned. Give a title_id or a description.',
+    ),
+  type: titleTypeSchema.optional().describe('"film", "series" or "any". Default: any.'),
+  genres: z
+    .array(z.string())
+    .optional()
+    .describe('At least one of these genres has to match. The values of list_facets.'),
+  exclude_genres: z
+    .array(z.string())
+    .optional()
+    .describe('None of these genres may match. Example: ["Эротика (18+)"].'),
+  countries: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'The country the film was made in: an ISO code or a name in any language. Example: ["FR"].',
+    ),
+  year_from: z
+    .number()
+    .int()
+    .min(1888)
+    .max(2100)
+    .optional()
+    .describe('The earliest year, inclusive.'),
+  year_to: z
+    .number()
+    .int()
+    .min(1888)
+    .max(2100)
+    .optional()
+    .describe('The latest year, inclusive.'),
+  min_rating: z
+    .number()
+    .min(0)
+    .max(10)
+    .optional()
+    .describe('The lowest provider rating, 0 to 10.'),
+  limit: z.number().int().min(1).max(50).optional().describe('How many titles to return. Default: 20.'),
+  cursor: z
+    .string()
+    .optional()
+    .describe('The next_cursor of the previous call, to read the next page.'),
+});
+
+/** The answer of `find_similar_titles`. */
+export const findSimilarTitlesOutput = z.object({
+  total: z.number(),
+  search_mode: z.enum(['words', 'words+meaning']),
+  /** The title the search started from. */
+  source: z.string().nullable(),
+  items: z.array(listItemSchema),
+  next_cursor: z.string().nullable(),
+});
+
 /** The parameters of `get_title`. */
 export const getTitleInput = z.object({
   title_id: z
@@ -270,6 +336,18 @@ export const getStatusOutput = z.object({
     pending: z.number(),
     model: z.string(),
     meaning: z.boolean(),
+  }),
+  /** The state of the embedding run. */
+  embedding: z.object({
+    running: z.boolean(),
+    phase: z.string(),
+    /** The texts that were embedded in this run. */
+    done: z.number(),
+    pending: z.number(),
+    error: z.string().nullable(),
+    enabled: z.boolean(),
+    available: z.boolean(),
+    key_present: z.boolean(),
   }),
   search_mode: z.enum(['words', 'words+meaning']),
   refresh_running: z

@@ -8,7 +8,8 @@
  * them (design: iptv-mcp-servers.md §5.4).
  */
 
-import type { ListItem } from './search.ts';
+import type { ListItem } from './items.ts';
+import type { SearchMode } from './search-types.ts';
 import type { EpisodeItem, TitleDetails } from './details.ts';
 import type { Facets } from './facets.ts';
 
@@ -45,12 +46,23 @@ export function renderListItem(item: ListItem): string {
 /**
  * The text of a list of titles.
  *
- * The engine is always the words; the text says how the result was found.
+ * The engine is named: the model has to know whether the result was found
+ * by the words, by the meaning, or by the filters alone.
  */
-export function renderList(items: ListItem[], total: number, usedWords: boolean): string {
+export function renderList(
+  items: ListItem[],
+  total: number,
+  mode: SearchMode,
+  usedWords: boolean,
+): string {
   if (items.length === 0) return 'Nothing found.';
 
-  const how = usedWords ? 'word search' : 'filters only';
+  const how =
+    mode === 'words+meaning'
+      ? 'word and meaning search'
+      : usedWords
+        ? 'word search'
+        : 'filters only';
   const head = `${total} title(s) found (${how}). Showing ${items.length}:`;
   return [head, ...items.map(renderListItem)].join('\n');
 }

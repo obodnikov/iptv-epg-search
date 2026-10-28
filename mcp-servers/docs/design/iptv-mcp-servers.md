@@ -1,9 +1,9 @@
 # IPTV MCP Servers (TV Guide + Cinema) — Design & Implementation Plan
 
-**Status:** Proposed. Design agreed in discussion on 2026-10-25. **Phase 0 and the phases C1,
-C2 and C3 are done (2026-10-27)**: the scaffolding, the shared base, the Cinema catalogue parser,
-the Cinema storage with the import and the Cinema MCP server with its six tools. Cinema first;
-the TV Guide server follows.
+**Status:** Proposed. Design agreed in discussion on 2026-10-25. **Phase 0 and the phases C1, C2,
+C3 and C4 are done (2026-10-27)**: the scaffolding, the shared base, the Cinema catalogue
+parser, the Cinema storage with the import, the Cinema MCP server with its seven tools and the
+search by meaning. Cinema first; the TV Guide server follows.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Location:** `mcp-servers/` in the `iptv-epg-search` repository. A separate product that lives
@@ -203,8 +203,10 @@ while the Cinema server was built: `hash.ts` (the sha256 of the servers), `lock.
 refresh lock of the working folder) and `permissions.ts` (the rights of the files). `refresh.ts`
 is split: the **lock** is done (C2), the **schedule and the progress** came with the tools
 (C3). `tool-kit.ts` — the shape of the answers and the cursor — is done (C3).
-`embeddings.ts` and the shared `search.ts` (the blend of the words and the meaning) come with
-C4.
+`embeddings.ts` (the OpenRouter client) and `vectors.ts` (the tables of the vectors database)
+came with C4. The blend of the words and the meaning is in the cinema module
+(`src/cinema/search.ts`); the TV Guide server will need it in `shared/` as well, and the move
+happens with the phase T4, where the first measurement of the TV Guide is made.
 
 ### 4.4 Movability rule
 
@@ -316,6 +318,8 @@ CREATE TABLE IF NOT EXISTS vectors (
 - Distance: `vec_distance_cosine(embedding, :query)` over the rows left after filtering. If
   measurement in Phase T4 shows that is too slow for TV Guide, move those vectors to a `vec0`
   table with metadata columns (start time, theme, kind).
+- The vectors of the **queries** live in a table of their own (`query_vectors`), so that the
+  number of the vectors of a model is the number of the titles that were embedded (C4).
 
 ### 6.3 Keyword index
 
@@ -356,6 +360,12 @@ heavier than description, as the web app weights title 2 and description 1,
 4. **Blend**: each score is rescaled to 0–1 within the candidate set, then
    `score = meaningWeight · meaning + (1 − meaningWeight) · words`. A candidate found by only
    one side gets 0 for the other.
+
+The candidate set of step 1 is the **union** of the titles that match the words and the titles
+that have a vector: a query that matches no word at all ("a film about loneliness in space") is
+answered by the meaning alone, and the number of the candidates is what the answer calls
+`total`. Without vectors the union is the word matches, and the search runs on the words alone —
+the answer says which of the two happened (`search_mode`).
 5. Sort by the requested order (`relevance` uses the blend), cut to `limit`, return a cursor.
 
 With no `query` and no `keywords`, the result is the filter result in the requested order.
@@ -533,10 +543,11 @@ Invariants. A change that breaks any of these is rejected:
 3. Meaning of the `⋗` prefix in 1,107 EPG titles ([tv-guide-server.md](tv-guide-server.md) §2.3).
 4. Source of the catalogue's `rating` (scale 0–10; provider does not say).
 5. Whether Pilot shows `structuredContent` or only `content` (both are sent either way).
-6. Real sizes and timings: **Cinema measured in C2** — the import of the 67,088 entries of
+6. Real sizes and timings: **Cinema measured in C2 and C4** — the import of the 67,088 entries of
    `tmp/index.m3u` takes **2.9 s** into an empty database and **1.0 s** when nothing changed;
    `data.sqlite` is **44.1 MB** with 7,270 titles, 6,301 variants and 60,658 episodes
-   (cinema-server.md §9 C2). The TV Guide is measured in T1.
+   (cinema-server.md §9 C2). The embedding of the 7,261 texts of that catalogue is measured in
+   §9 C4. The TV Guide is measured in T1.
 
 ## 14. Non-goals
 

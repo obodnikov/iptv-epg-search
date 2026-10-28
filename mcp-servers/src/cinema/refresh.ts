@@ -13,6 +13,7 @@ import { type SettingsStore } from '../shared/settings.ts';
 import { type RefreshRunner } from '../shared/refresh.ts';
 import { sha256 } from '../shared/hash.ts';
 import { readCinemaSettings, type CinemaSettings } from './config.ts';
+import { type Embedder } from './embedder.ts';
 import { importSettingsSignature, refreshCatalog } from './import.ts';
 import { META_KEYS, writeRefreshState } from './status.ts';
 
@@ -25,6 +26,13 @@ export interface CinemaRefreshContext {
   settings: SettingsStore;
   logger: Logger;
   runner: RefreshRunner;
+  /**
+   * The worker of the embeddings.
+   *
+   * It starts after a successful import: the texts that changed have to be
+   * embedded again, and the run happens in the background.
+   */
+  worker: Embedder;
 }
 
 /**
@@ -110,6 +118,16 @@ export function createCinemaRefresh(ctx: CinemaRefreshContext): (force: boolean)
         duration_ms: outcome.durationMs,
         unchanged: outcome.unchanged,
       });
+
+      // The texts that have to be embedded are embedded in the background:
+      // the tool call never waits for it.
+      const pending =
+        ctx.db.get<{ found: number }>(
+          'SELECT count(*) AS found FROM vector_queue',
+        )?.found ?? 0;
+      if (pending > 0) {
+        ctx.worker.start();
+      }
 
       return outcome;
     });

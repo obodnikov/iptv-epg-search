@@ -1,9 +1,9 @@
 # Cinema MCP Server — Design & Implementation Plan
 
-**Status:** In progress. **First server to implement.** Phase 0, C1, C2 and C3 are done
-(2026-10-27): the shared base, the catalogue parser, the storage with the import, and the MCP
-server with its six tools, with the measured numbers of §2.3 and §9. The search by meaning
-comes in C4.
+**Status:** In progress. **First server to implement.** Phase 0, C1, C2, C3 and C4 are done
+(2026-10-27): the shared base, the catalogue parser, the storage with the import, the MCP
+server with its seven tools and the search by meaning, with the measured numbers of §2.3 and
+§9. The Pilot connection and the manual checks are C5.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -320,7 +320,14 @@ The genre "Взрослые" ("for grown-ups") is **not** an adult marker: its 5
    - the row of the keyword index is written again when the text of the title changed;
    - the titles that are not in `import_staging` get a `removed_at`, or are deleted when
      `trackChanges` is off;
-   - the queue rows of the texts that left the catalogue are removed.8. **Queue vectors** for `text_hash` values the active model has not embedded yet.
+   - the queue rows of the texts that left the catalogue are removed.
+8. **Queue vectors** for `text_hash` values the active model has not embedded yet.
+
+**The embedding run (C4).** The import does not empty the queue: the **worker**
+(`src/cinema/embedder.ts`) takes the texts out of it, asks the service for their vectors and
+writes them. It runs in the background, with its own lock (`embed.lock`) and its own progress:
+the refresh answers at once, and the vectors arrive while the server is used. The worker starts
+after a successful import and at the start of the server, when the queue is not empty.
 
 ---
 
@@ -371,12 +378,28 @@ The main search. Use it first for any catalogue question.
 **Returns:** `{ total, search_mode: "words+meaning" | "words", items: [list item], next_cursor }`.
 Titles with `removed_at` set are excluded.
 
-**The words of C3.** The search matches words, not meaning: the words of the `query` and the
-words of the `keywords` are alternatives, and `bm25` puts the title that matches more of them
-higher (the title weighs 3.0, the people 1.5, the description 1.0). The `person` is looked for
-in the people and in the description of the title. `search_mode` is `"words"` until C4 adds the
-meaning side; the description of the tool says so, so that the model does not read a thin
-result as the answer to a question about meaning.
+**The words and the meaning (C4).** The words of the `query` and the words of the `keywords` are
+alternatives, and `bm25` puts the title that matches more of them higher (the title weighs 3.0,
+the people 1.5, the description 1.0). The `person` is looked for in the people and in the
+description of the title.
+
+The `query` is also **embedded**: its vector is compared with the vector of every candidate
+(`vec_distance_cosine`). Both scores are rescaled to 0–1 inside the candidate set and mixed:
+
+```
+score = meaningWeight · meaning + (1 − meaningWeight) · words
+```
+
+`meaningWeight` comes from the settings (0.7). A title that was found by one side only gets 0
+for the other.
+
+The candidates are the **union** of the titles that match the words and the titles that have a
+vector, both inside the filters. A query that matches no word at all ("фильм про одиночество в
+космосе") is therefore answered by the meaning alone, and `total` is the size of that union.
+
+The meaning is only used when the order is `relevance`: another order asks for something else.
+`search_mode` says what really happened: `"words+meaning"` when the meaning was used, `"words"`
+when the search ran on the words alone — no vectors, no key, or another order.
 
 ### 6.2 `get_title`
 
@@ -403,13 +426,22 @@ result as the answer to a question about meaning.
 
 | Parameter | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `title_id` | string | — | "like this one"; one of `title_id` or `description` is required |
+| `title_id` | string | — | "like this one": a title of the catalogue |
 | `description` | string | — | "like this description" (also a film that is not in the catalogue) |
 | `type`, `genres`, `exclude_genres`, `countries`, `year_from`, `year_to`, `min_rating` | | | same as `search_titles` |
 | `limit` | number | 10 (max 50) | — |
+| `cursor` | string | — | from the previous result |
 
-Nearest titles by vector distance; the source title itself is excluded. Without vectors it
-falls back to shared genres and country, ordered by rating, and reports `search_mode: "words"`.
+One of `title_id` and `description` is required. With a `title_id` the vector of that title is
+the query; with a `description` the description is embedded and its vector is the query. The
+nearest titles by vector distance come first, and the title the search started from is never in
+the answer.
+
+**Returns:** `{ total, search_mode, source, items: [list item], next_cursor }`.
+
+Without vectors the tool falls back to the titles that share a genre with the source, ordered
+by the rating, and reports `search_mode: "words"`. A `description` without a vector has nothing
+to fall back on: the answer is an error that names the reason.
 
 ### 6.5 `list_facets`
 
@@ -455,9 +487,8 @@ Starts a background refresh and returns at once: `started`, `already running`, o
 >   directors, places) in `keywords`. Take category and genre values from `list_facets`.
 > - `countries` means the country where the film was made.
 > - "New" or "recently added": `sort="added"` with `added_within_days`.
-> - "Something like X": find X with `search_titles`, then call `find_similar_titles` with its
->   `title_id`. That tool arrives with the search by meaning; until then, search with the
->   genres, the country and the director of X.
+> - "Something like X": call `find_similar_titles` with the `title_id` of X, or with a
+>   description of a film that is not in the catalogue.
 > - Lists contain no play links. Call `get_title` (film) or `list_episodes` (series) when the
 >   user wants to watch.
 > - `rating` is the provider's 0–10 score. When judging whether a title is worth watching, say
@@ -839,7 +870,114 @@ again. The test suite covers them: 307 tests, all green.
   - the settings could hold a `defaultLimit` that is bigger than the `maxLimit`. The default
     is held down by the biggest limit now.
 
-**C4 — Embeddings and search by meaning.**
+**C4 — Embeddings and search by meaning.** *(done 2026-10-27)*
+- What was built:
+  - `src/shared/embeddings.ts` — the client of OpenRouter: the texts go in batches, the answer
+    is sorted by its `index`, a request that failed is repeated with a backoff, the
+    `Retry-After` of the service is obeyed, a 4xx that is not a rate limit fails at once. The
+    key comes from the environment and is never logged. The fake embedder of the tests (a
+    vector that is a function of the text) is at the bottom of the module.
+  - `src/shared/vectors.ts` — the tables of `vectors.sqlite`: `vectors` (one vector per text
+    and per model, the shape of the parent document §6.2) and `query_vectors` (the vectors of
+    the queries, kept apart so that the number of the vectors is the number of the titles).
+  - `src/cinema/embedder.ts` — the background worker: it takes the texts of `vector_queue`,
+    embeds them in batches, writes the vectors and takes the texts out of the queue. It has its
+    own lock (`embed.lock`) and its own progress; it runs apart from the refresh, which answers
+    at once.
+  - `src/cinema/query-cache.ts` — the vectors of the queries: in the memory of the process and
+    in the table `query_vectors`, so that a repeated search or the next page of a search costs
+    nothing.
+  - `src/cinema/search.ts` — the blend: the candidates are the union of the titles that match
+    the words and the titles that have a vector, both scores are rescaled to 0–1 inside the
+    candidate set and mixed with the weight of the settings. The words are in `words.ts`, the
+    candidates and the mix in `blend.ts`, the rows of a title in `items.ts`.
+  - `src/cinema/similar.ts` — `find_similar_titles`: the nearest titles by vector distance, the
+    source title excluded, the fallback to the shared genres when there are no vectors.
+  - `src/cinema/handlers.ts`, `handler-search.ts`, `handler-similar.ts`, `tool-context.ts`,
+    `schemas.ts`, `descriptions.ts`, `tools.ts`, `server.ts`, `status.ts`, `refresh.ts`,
+    `render.ts`, `queue.ts` — the wiring of the seventh tool and of the meaning. The modules
+    were split so that none of them grows past the 600 lines of `AI_MCP.md`.
+  - `scripts/embed-real-data.ts` — the run over a real catalogue: the import, the embedding of
+    every text and the numbers of the run.
+- Tests:
+  - `tests/shared/embeddings.test.ts` — the client with a fake `fetch`: the batches, the order
+    of the answer, the retry, the `Retry-After`, the 4xx that is not repeated, the key that
+    never reaches a message;
+  - `tests/shared/vectors.test.ts` — the tables, the bytes of a vector, the model that is part
+    of the key, the vectors of the queries kept apart;
+  - `tests/cinema/blend.test.ts` — the arithmetic of the blend: the rescaling, the weight, a
+    title that was found by one side only;
+  - `tests/cinema/embedder.test.ts` — the worker: it empties the queue, it does nothing without
+    a key, it leaves the short texts alone, it runs only once at a time, it keeps the failure
+    of the service in its state;
+  - `tests/cinema/similar.test.ts` — the similar titles: by id, the source excluded, the
+    filters, the fallback without vectors, the vectors of another model;
+  - `tests/cinema/tools.test.ts` — the contract: `search_mode` is `"words"` without vectors and
+    `"words+meaning"` with them, the meaning leads when no word matches, another order falls
+    back to the words, the seventh tool answers and refuses what it cannot answer.
+- Four decisions the design left open, taken in C4 (with the owner, 2026-10-27):
+  - **the embedding run is a separate worker**, not a phase of the refresh: it has its own lock
+    (`embed.lock`) and its own progress, and `refresh_catalog` answers at once;
+  - **the candidates are the union** of the word matches and the titles that have a vector: a
+    query that matches no word is answered by the meaning alone, and `total` is the size of
+    that union;
+  - **the partial vectors are used as they come**: a title that has no vector yet gets 0 on the
+    meaning side, and `search_mode` is `"words+meaning"` as soon as the meaning side ran;
+  - **the meaning is only used for the order `relevance`**: another order asks for something
+    else than the meaning of the query.
+- Two things the code had to be told about, both in the design above:
+  - the table `vectors` of `vectors.sqlite` was never created: the modules that use it only
+    looked for it. It is created now, on every start, in `shared/vectors.ts`;
+  - the settings `embeddings.enabled` and `embeddings.apiKeyEnv` were never read. They are read
+    now: the key comes from the environment, and the switch in the settings turns the whole
+    thing off.
+- The key of the service is **not** in `settings.json`: it comes from the environment
+  (`OPENROUTER_API_KEY`, the name is in `embeddings.apiKeyEnv`). The npm scripts load it from
+  the `.env` file of the repository; Sqowe Pilot carries it in the Environment field of the
+  server entry.
+- **Measured on the real catalogue** (`tmp/index.m3u`, the June 2026 snapshot, 2026-10-27,
+  `npm run embed-real-data ../tmp/index.m3u`):
+
+  | Fact | Value |
+  | --- | --- |
+  | Import time (empty database) | 2.8 s (67,088 entries read) |
+  | Titles / texts to embed | 7,270 / 7,261 |
+  | Requests to the service | 146 (batches of 50) |
+  | Time of the embedding | **282.8 s** (25.7 texts per second) |
+  | `vectors.sqlite` | **32.6 MB** (7,261 vectors of 1024 dimensions) |
+  | `data.sqlite` | 44.1 MB (as in C2) |
+  | Search with the meaning (7,259 candidates) | **48–132 ms** |
+  | The one call that embeds the query | 0.7–2.3 s |
+
+  The search meets the target of the parent document §7.4 (under 300 ms without the call that
+  embeds the query). The distance of 7,270 vectors of 1024 dimensions takes about 12 ms in
+  SQLite, which is why the design puts the candidates in one query and not in the page.
+
+  Two questions of the manual checks (§10) with the real vectors:
+  - «Фильм про одиночество в космосе» → **Пассажиры** (2016), **Пришелец** (2018), **Сто лет
+    одиночества** (2024) — the meaning leads, as it should;
+  - «тихая французская драма о семье» → the titles with "тихая" in the name come first: the
+    words of the query ("тихая") are a stronger signal than the meaning here, and the weight of
+    the meaning (0.7) is a setting of the owner.
+- **The smoke test against the real data** (the server over stdio, the catalogue of
+  `tmp/index.m3u` with its 7,261 vectors):
+  - `search_titles(query="космический вестерн про одиночество")` → **Пассажиры** (2016),
+    **Пришелец** (2018), **Сто лет одиночества** (2024);
+  - `find_similar_titles(description="a quiet drama about a family in the French countryside")` →
+    **Жизнь кабачка** (2016, FR), **Он и она** (2017, FR), **Семейное ограбление** (2017, FR);
+  - `find_similar_titles(title_id=…)` → **Икар** (2022, BE/FR) and **Маленькая страна**
+    (2020, FR) for «Жизнь кабачка»;
+  - the answers took 36 ms (the similar search by id) and about a second (the searches that
+    embed the query).
+- One bug the smoke test found: the state of the server said "words" although the vectors were
+  there. The flag that says that the search by meaning is available was read from the number of
+  the texts of the **last run** and not from the number of the vectors in the database: a server
+  that was started again reported the wrong mode. It is read from the vectors now, and the test
+  covers the case of a restart.
+- **A tool call waits for one thing:** the embedding of the **query**. The design allows it
+  (parent §7.4 counts the one OpenRouter call apart), and the search cannot answer without it.
+  The embedding of the **catalogue** never blocks a call: it is the worker of the background.
+
 - `embeddings.ts` (OpenRouter, batches, backoff), `vectors.sqlite`, query-embedding cache, the
   blend, `find_similar_titles`.
 - Tests with the fake provider:

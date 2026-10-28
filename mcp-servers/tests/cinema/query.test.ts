@@ -7,13 +7,8 @@ import { describe, it } from 'node:test';
 
 import { applyCinemaSchema } from '../../src/cinema/schema.ts';
 import { importCatalogText, type ImportOptions } from '../../src/cinema/import.ts';
-import {
-  buildMatchExpression,
-  searchSignature,
-  searchTitles,
-  stemmedTerms,
-  type SearchRequest,
-} from '../../src/cinema/search.ts';
+import { searchSignature, searchTitles, type SearchRequest } from '../../src/cinema/search.ts';
+import { buildMatchExpression, stemmedTerms } from '../../src/cinema/words.ts';
 import {
   buildFilter,
   countryConditions,
