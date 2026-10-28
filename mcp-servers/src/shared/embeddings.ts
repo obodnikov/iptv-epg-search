@@ -121,10 +121,41 @@ export interface TextEmbedder {
   readonly model: string;
   /** True when the embeddings can be used at all. */
   readonly available: boolean;
+  /**
+   * The reason of the last failure, or null.
+   *
+   * The client hides the failures from the search (the search falls back to
+   * the words), but the reason has to reach the log: without it a failed
+   * run only says that "the service did not answer every text".
+   */
+  readonly lastError?: string | null;
   /** Embed one text. Returns null when it is not possible. */
   embed(text: string): Promise<Float32Array | null>;
   /** Embed many texts. Returns null when it is not possible. */
   embedMany(texts: string[]): Promise<Float32Array[] | null>;
+}
+
+/**
+ * True when a value is the name of an environment variable.
+ *
+ * The setting `embeddings.apiKeyEnv` holds the **name** of the variable
+ * that holds the key, never the key itself. A value that is not a name is
+ * a mistake (the key was pasted into the setting), and it must never reach
+ * the log: it is a secret then.
+ */
+export function isEnvVarName(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+/**
+ * A value of the settings that may be a secret, ready for the log.
+ *
+ * A value that is the name of an environment variable is written as it is;
+ * anything else is only described, never written down.
+ */
+export function safeForLog(value: string): string {
+  if (isEnvVarName(value)) return value;
+  return `a value that is not the name of an environment variable (${value.length} characters)`;
 }
 
 /**
@@ -375,6 +406,10 @@ export function createOpenRouterEmbedder(
     return trimmed.length > 0 ? trimmed : null;
   };
 
+  // The reason of the last failure. The search does not fail because of
+  // it, but the log has to say what the service answered.
+  let lastError: string | null = null;
+
   const embedder: TextEmbedder = {
     get model(): string {
       return getSettings().model;
@@ -383,6 +418,9 @@ export function createOpenRouterEmbedder(
       const settings = getSettings();
       if (!settings.enabled) return false;
       return keyOf(settings) !== null;
+    },
+    get lastError(): string | null {
+      return lastError;
     },
     async embed(text: string): Promise<Float32Array | null> {
       const settings = getSettings();
@@ -398,10 +436,12 @@ export function createOpenRouterEmbedder(
           model: settings.model,
           batchSize: 1,
         });
+        lastError = null;
         return outcome.vectors[0] ?? null;
-      } catch {
+      } catch (error) {
         // A failure of the service must not fail the search: the search
-        // falls back to the words.
+        // falls back to the words. The reason is kept for the log.
+        lastError = error instanceof Error ? error.message : String(error);
         return null;
       }
     },
@@ -419,8 +459,10 @@ export function createOpenRouterEmbedder(
           model: settings.model,
           batchSize: settings.batchSize,
         });
+        lastError = null;
         return outcome.vectors;
-      } catch {
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
         return null;
       }
     },
@@ -487,6 +529,7 @@ export function createFakeEmbedder(
   return {
     model,
     available: true,
+    lastError: null,
     async embed(text: string): Promise<Float32Array | null> {
       if (!text.trim()) return null;
       return make(text);

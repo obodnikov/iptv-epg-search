@@ -233,6 +233,8 @@ describe('the worker of the embeddings', () => {
         dataDir: test.dir,
         settings: store,
         logger,
+        // One attempt: the test does not wait for the retries.
+        batchAttempts: 1,
         embedder: {
           model: 'BAAI/bge-m3',
           available: true,
@@ -249,6 +251,94 @@ describe('the worker of the embeddings', () => {
       assert.ok(status.last_error);
       // The texts are still in the queue: the next run takes them again.
       assert.ok(queued(test) > 0);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('names the reason of the failure of the service', async () => {
+    const test = withCatalogue();
+    try {
+      const path = join(test.dir, 'settings.json');
+      writeFileSync(
+        path,
+        `${JSON.stringify({ ...CINEMA_SETTINGS_TEMPLATE }, null, 2)}\n`,
+        { mode: 0o600 },
+      );
+
+      const store = new SettingsStore(path, CINEMA_SETTINGS_SPEC);
+      const logger = new Logger(join(test.dir, 'logs', 'server.log'), 'error');
+      const worker = createEmbedder({
+        db: test.db,
+        dataDir: test.dir,
+        settings: store,
+        logger,
+        batchAttempts: 1,
+        embedder: {
+          model: 'BAAI/bge-m3',
+          available: true,
+          embed: async () => null,
+          embedMany: async () => null,
+          // The reason of the service: without it the run only says that
+          // "the service did not answer every text".
+          lastError: 'the embedding service answered with the status 429',
+        },
+      });
+
+      worker.start();
+      await waitFor(worker);
+
+      const status = worker.status();
+      assert.equal(status.phase, 'failed');
+      assert.match(String(status.last_error), /did not answer every text/);
+      assert.match(String(status.last_error), /429/);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it('asks for a batch again when the service does not answer it', async () => {
+    const test = withCatalogue();
+    try {
+      const path = join(test.dir, 'settings.json');
+      writeFileSync(
+        path,
+        `${JSON.stringify({ ...CINEMA_SETTINGS_TEMPLATE }, null, 2)}\n`,
+        { mode: 0o600 },
+      );
+
+      const store = new SettingsStore(path, CINEMA_SETTINGS_SPEC);
+      const logger = new Logger(join(test.dir, 'logs', 'server.log'), 'error');
+
+      let calls = 0;
+      const worker = createEmbedder({
+        db: test.db,
+        dataDir: test.dir,
+        settings: store,
+        logger,
+        batchAttempts: 3,
+        batchDelaysMs: [1, 1],
+        embedder: {
+          model: 'BAAI/bge-m3',
+          available: true,
+          embed: async () => null,
+          embedMany: async (texts: string[]) => {
+            calls += 1;
+            // The first two answers are empty: the third one works.
+            if (calls < 3) return null;
+            return texts.map(() => new Float32Array(4));
+          },
+        },
+      });
+
+      worker.start();
+      await waitFor(worker);
+
+      const status = worker.status();
+      assert.equal(status.phase, 'done');
+      assert.equal(calls, 3);
+      // The texts are out of the queue: they were embedded.
+      assert.equal(queued(test), 0);
     } finally {
       test.cleanup();
     }

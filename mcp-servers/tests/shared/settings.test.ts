@@ -23,12 +23,24 @@ const SPEC: SettingsSpec = {
     excludeCategories: [],
     countryAliases: {},
     search: { defaultLimit: 20, maxLimit: 50, snippetChars: 200, meaningWeight: 0.7 },
-    embeddings: { enabled: true, model: 'BAAI/bge-m3', batchSize: 50, minTextChars: 40 },
+    embeddings: {
+      enabled: true,
+      model: 'BAAI/bge-m3',
+      apiKeyEnv: 'OPENROUTER_API_KEY',
+      batchSize: 50,
+      minTextChars: 40,
+    },
     logLevel: 'info',
   },
   urlFields: ['cinemaUrl'],
   freeForm: ['countryAliases'],
   enums: { logLevel: ['error', 'warn', 'info', 'debug'] },
+  patterns: {
+    'embeddings.apiKeyEnv': {
+      pattern: /^[A-Za-z_][A-Za-z0-9_]*$/,
+      what: 'the name of an environment variable',
+    },
+  },
   ranges: {
     refreshHours: { min: 1, max: 8760 },
     'search.defaultLimit': { min: 1, max: 200 },
@@ -106,6 +118,27 @@ describe('mergeSettings', () => {
   it('reports an unknown setting', () => {
     const { issues } = mergeSettings({ nonsense: 1 }, SPEC);
     assert.match(issues[0] ?? '', /nonsense/);
+  });
+
+  it('rejects a value that is not the name of an environment variable', () => {
+    const { settings, issues } = mergeSettings(
+      { embeddings: { apiKeyEnv: 'sk-or-v1-SECRET-KEY-1234567890' } },
+      SPEC,
+    );
+
+    assert.equal(issues.length, 1);
+    assert.match(issues[0] ?? '', /apiKeyEnv/);
+    assert.match(issues[0] ?? '', /environment variable/);
+    // The value is a secret: it must not reach the message.
+    assert.ok(!(issues[0] ?? '').includes('SECRET'));
+    // The default is kept.
+    assert.deepEqual(settings['embeddings'], {
+      enabled: true,
+      model: 'BAAI/bge-m3',
+      apiKeyEnv: 'OPENROUTER_API_KEY',
+      batchSize: 50,
+      minTextChars: 40,
+    });
   });
 
   it('rejects a bad URL and keeps the field empty', () => {

@@ -20,7 +20,7 @@ working folder. The design is in [`docs/design/`](docs/design/):
 | C2 | Storage and import | done |
 | C3 | MCP server and tools (words only) | done (2026-10-27) |
 | C4 | Embeddings and search by meaning | done (2026-10-27) |
-| C5 | Pilot connection and manual checks | not started |
+| C5 | Pilot connection and manual checks | in progress (2026-10-28) |
 | T1–T6 | TV Guide server | not started |
 
 The Cinema server runs: `npm run cinema` starts it and speaks MCP over stdio. It serves seven
@@ -60,6 +60,7 @@ npm install
 | `npm run check-real-data` | parses a real catalogue file and prints the counts |
 | `npm run import-real-data` | imports a real catalogue file and prints the sizes and the times |
 | `npm run embed-real-data` | imports a real catalogue file, embeds every text and prints the times |
+| `npm run manual-checks` | runs the ten checks of the design against the server of the working folder |
 
 The scripts that need the key of the embedding service load it from the `.env` file of the
 repository (or of `mcp-servers/`); a variable that is already in the environment wins. The
@@ -135,6 +136,10 @@ mcp-servers/
     check-real-data.ts  counts of a real catalogue file
     import-real-data.ts imports a real catalogue file and prints the sizes and the times
     embed-real-data.ts  imports a real catalogue file, embeds it and prints the times
+    manual-checks.ts    runs the ten checks of the design against the server
+    manual/
+      checks.ts         the ten checks of the design, with what each one expects
+      support.ts        the helpers: the server over stdio, the answers, the database
   docs/design/          the design documents
 ```
 
@@ -204,10 +209,56 @@ phase C5. It looks like this:
 | --- | --- |
 | Name | `Cinema` |
 | Type | `stdio` |
-| Command | `node` |
+| Command | the absolute path of `node` (see below) |
 | Args | `<abs path>/mcp-servers/src/cinema/server.ts --data-dir ~/.iptv-mcp/cinema` |
 | Environment | `OPENROUTER_API_KEY=…` (the key is only needed for the embeddings) |
 | Tool policy | `allow-reads` |
+
+### Adding the server in the UI of Pilot
+
+**Settings (⌘,) → tab "MCP Connectors" → "Add Custom Connector".**
+
+| Field of the form | Value |
+| --- | --- |
+| Name | `Cinema` |
+| Description | `Online cinema of the user's IPTV provider: find films and series by genre, country, year, rating or meaning; similar titles; new arrivals; play links.` |
+| Type | **STDIO (Local)** |
+| Command | the **absolute** path of `node`, e.g. `/Users/eobomik/.local/Homebrew/bin/node` |
+| Arguments | `<abs path>/mcp-servers/src/cinema/server.ts --data-dir /Users/eobomik/.iptv-mcp/cinema` |
+| Environment variables | `OPENROUTER_API_KEY` → the value of the key |
+| Enable this connector | on |
+| Tool timeout | `0` (the global default of 240 s) |
+
+The name becomes the prefix of the tool names the model sees: `mcp__Cinema__search_titles`,
+`mcp__Cinema__find_similar_titles`, `mcp__Cinema__get_title`, `mcp__Cinema__list_episodes`,
+`mcp__Cinema__list_facets`, `mcp__Cinema__get_status`, `mcp__Cinema__refresh_catalog`.
+
+Three things that are easy to get wrong:
+
+1. **The command is the absolute path of `node`.** Pilot starts the server without a shell, and
+   `node` is not in the default path of macOS. A Homebrew path (`/Users/eobomik/.local/Homebrew/bin/node`)
+   survives a Node upgrade; a path of nvm (`/Users/eobomik/.nvm/versions/node/v24.17.0/bin/node`)
+   breaks when the version changes.
+2. **The Arguments field is split on whitespace** — neither path may contain a space.
+3. **The key goes into the Environment field of the entry**, not into `settings.json`. The
+   settings file holds the *name* of the variable (`embeddings.apiKeyEnv: "OPENROUTER_API_KEY"`);
+   a key pasted into that setting is refused with a message that does not repeat it.
+
+After saving, the card shows **Connected** and the number of the tools. Set the tool policy of
+the card to **`allow-reads`**: the default `ask-all` would ask before every search.
+`refresh_catalog` still asks — it has no read verb, and that is intended. The server also has
+to be enabled for the chat ("MCP Servers for this chat" in the context panel).
+
+When the card shows **Connection failed**, the log says why:
+
+```bash
+tail -f ~/.iptv-mcp/cinema/logs/server.log
+```
+
+The entry may also be written into the file of Pilot directly:
+`~/Library/Application Support/open-cowork/mcp-config.json` (the store is
+`src/main/mcp/mcp-config-store.ts` of Pilot). The file is rewritten by the app, so it may only
+be changed while Pilot is closed.
 
 ## Rules of this folder
 

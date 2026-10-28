@@ -14,7 +14,8 @@
     "tv-guide": "node -e \"console.error('The TV Guide server arrives in phase T1.'); process.exit(1)\"",
     "check-real-data": "node scripts/check-real-data.ts",
     "import-real-data": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/import-real-data.ts",
-    "embed-real-data": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/embed-real-data.ts"
+    "embed-real-data": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/embed-real-data.ts",
+    "manual-checks": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/manual-checks.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",

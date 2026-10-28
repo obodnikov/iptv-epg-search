@@ -30,6 +30,7 @@ import { type Logger } from '../shared/log.ts';
 import { type SettingsStore } from '../shared/settings.ts';
 import { type TextEmbedder } from '../shared/embeddings.ts';
 import { acquireLock } from '../shared/lock.ts';
+import { safeForLog } from '../shared/embeddings.ts';
 import { ensureVectorSchema, putVectors } from '../shared/vectors.ts';
 import { readCinemaSettings } from './config.ts';
 import {
@@ -42,6 +43,20 @@ import {
 
 /** The name of the lock file of the embedding run. */
 export const EMBED_LOCK_FILE = 'embed.lock';
+
+/**
+ * How many times a batch is asked for again when the service fails.
+ *
+ * The client repeats a failed request by itself; this is the second try of
+ * the whole batch, for the failures that pass a batch but not a single
+ * request (a rate limit that lasts longer than the backoff, for example).
+ */
+export const BATCH_ATTEMPTS = 3;
+
+/**
+ * The wait before the second attempt of a batch, and before the third.
+ */
+export const BATCH_DELAYS_MS = [5_000, 20_000];
 
 /** What the embedding run is doing. */
 export type EmbedPhase = 'idle' | 'embedding' | 'done' | 'failed';
@@ -81,6 +96,10 @@ export interface EmbedderContext {
   logger: Logger;
   /** The client of the embedding service. */
   embedder: TextEmbedder;
+  /** How many times a batch is asked for again; the tests make it short. */
+  batchAttempts?: number;
+  /** The wait between two attempts of a batch; the tests make it short. */
+  batchDelaysMs?: number[];
 }
 
 /** The worker of the embeddings. */
@@ -95,6 +114,47 @@ export interface Embedder {
   start(): 'started' | 'already_running' | 'disabled';
   /** The state of the run. */
   status(): EmbedderStatus;
+}
+
+/**
+ * Ask the service for the vectors of a batch.
+ *
+ * A batch that is not answered is asked for again: the client repeats a
+ * failed request by itself, but a failure that lasts longer than the
+ * backoff of the client needs a second try of the whole batch. The reason
+ * of the last failure is in the message, so that the log says what the
+ * service answered.
+ *
+ * @throws Error when the service does not answer the batch.
+ */
+async function embedBatch(
+  ctx: EmbedderContext,
+  texts: string[],
+): Promise<Float32Array[]> {
+  const attempts = Math.max(1, ctx.batchAttempts ?? BATCH_ATTEMPTS);
+  const delays = ctx.batchDelaysMs ?? BATCH_DELAYS_MS;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const vectors = await ctx.embedder.embedMany(texts);
+    if (vectors && vectors.length === texts.length) return vectors;
+
+    const reason = ctx.embedder.lastError ?? 'the service did not answer every text';
+    if (attempt === attempts) {
+      throw new Error(`the embedding service did not answer every text: ${reason}`);
+    }
+
+    const delay = delays[attempt - 1] ?? delays[delays.length - 1] ?? 20_000;
+    ctx.logger.warn('the embedding service did not answer a batch', {
+      attempt,
+      texts: texts.length,
+      reason,
+      delay_ms: delay,
+    });
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
+  // The loop always returns or throws.
+  throw new Error('the embedding service did not answer every text');
 }
 
 /**
@@ -173,10 +233,7 @@ export function createEmbedder(ctx: EmbedderContext): Embedder {
         );
         if (texts.length === 0) break;
 
-        const vectors = await ctx.embedder.embedMany(texts.map((entry) => entry.text));
-        if (!vectors || vectors.length !== texts.length) {
-          throw new Error('the embedding service did not answer every text');
-        }
+        const vectors = await embedBatch(ctx, texts.map((entry) => entry.text));
 
         const now = Date.now();
         putVectors(
@@ -224,9 +281,11 @@ export function createEmbedder(ctx: EmbedderContext): Embedder {
         return 'disabled';
       }
       if (!ctx.embedder.available) {
-        // The key is missing: the search falls back to the words.
+        // The key is missing: the search falls back to the words. The name
+        // of the variable is written down, but only when it is a name: a
+        // setting that holds the key itself must never reach the log.
         ctx.logger.warn('the key of the embedding service is not in the environment', {
-          variable: settings.apiKeyEnv,
+          variable: safeForLog(settings.apiKeyEnv),
         });
         return 'disabled';
       }

@@ -3,7 +3,9 @@
 **Status:** In progress. **First server to implement.** Phase 0, C1, C2, C3 and C4 are done
 (2026-10-27): the shared base, the catalogue parser, the storage with the import, the MCP
 server with its seven tools and the search by meaning, with the measured numbers of §2.3 and
-§9. The Pilot connection and the manual checks are C5.
+§9. The Pilot connection and the manual checks are C5; the connection, the check
+script and the ten checks of §10 against the live catalogue are done (2026-10-28), the
+questions in Pilot are still to be asked.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -987,11 +989,60 @@ again. The test suite covers them: 307 tests, all green.
   - a model change ignores the old vectors.
 - One live run on the full catalogue: record the time and the number of vectors.
 
-**C5 — Pilot connection and manual checks.**
-- README: install, Pilot entry ([iptv-mcp-servers.md](iptv-mcp-servers.md) §5.3), settings
-  reference.
-- Run the questions in §10. Adjust tool descriptions where the model chose badly; record what
-  changed.
+**C5 — Pilot connection and manual checks.** *(in progress 2026-10-28)*
+- What was built:
+  - `scripts/manual-checks.ts` with `scripts/manual/checks.ts` and `scripts/manual/support.ts` —
+    the ten checks of §10, run against the server over stdio, the way a client runs it. The
+    script starts the server itself (with the working folder of the settings), asks the ten
+    questions with the tool calls §10 prescribes, and prints what the server answered and
+    whether the answer is the one the design expects. It checks the **server**: what the model
+    chooses is what the checks in Pilot are for, and the script tells the two apart.
+    `npm run manual-checks`. The checks that depend on the state of the catalogue (an empty
+    catalogue, the vectors that are not built yet) are marked as warnings and do not fail the
+    run; the run stops with a sentence when the server is not ready at all.
+  - The entry of the server in Sqowe Pilot: `~/Library/Application Support/open-cowork/mcp-config.json`
+    (`src/main/mcp/mcp-config-store.ts` of Pilot). The name is `Cinema` (the prefix of the tool
+    names: `mcp__Cinema__search_titles`), the type `stdio`, the **absolute** path of `node`
+    (`/Users/eobomik/.local/Homebrew/bin/node` — the app starts the server without a shell, and
+    `node` is not in the default path of macOS), the path of `src/cinema/server.ts`,
+    `--data-dir ~/.iptv-mcp/cinema` (the `~` is expanded by the server itself,
+    `src/shared/args.ts`), the `OPENROUTER_API_KEY` of the `.env` file of the repository in the
+    Environment field, and the policy `allow-reads` (the default `ask-all` would ask for every
+    search). The description is the text of §7.
+  - The working folder `~/.iptv-mcp/cinema/` with the `settings.json` of the design, written
+    with mode `0600` (the folder with `0700`).
+- What the first run of the checks found:
+  - `list_facets` did not name the settings file when the URL of the provider is not set: it
+    answered that the catalogue is empty and sent the model into a refresh that cannot work
+    (§10, check 10). The check of the URL comes first now, in `list_facets` as well, and the
+    test covers it.
+  - **The reason of a failed embedding run was lost.** `embedMany` of `shared/embeddings.ts`
+    caught every failure and answered `null`; the worker then said only "the embedding service
+    did not answer every text". The client keeps the reason of the last failure now
+    (`TextEmbedder.lastError`), the worker writes it into the log and into its state, and the
+    message of the failed run names it. The test covers it.
+  - **One bad batch stopped the whole run.** The client repeats a failed request by itself, but
+    a failure that outlives its backoff ended the run of the worker, and nothing started it
+    again: the catalogue stayed half embedded. The worker asks for the batch again (three times,
+    5 s and 20 s apart) and only then stops. The tests cover the second try and the reason.
+  - **The key of the embedding service reached the log.** The setting `embeddings.apiKeyEnv`
+    holds the **name** of the variable that holds the key; a key that was pasted into the
+    setting was written into the log as it was (`WARN ... variable=sk-or-v1-…`). The value of
+    the setting is only written down when it is the name of a variable (`safeForLog`), and the
+    settings file now refuses a value that is not one (`patterns` in the settings spec): the
+    problem is reported without the value. The key was removed from the log of the working
+    folder.
+- **Measured on the live catalogue of the provider (2026-10-28):**
+
+  | Fact | Value |
+  | --- | --- |
+  | Titles | **7,650** (5,965 films, 1,685 series) |
+  | Import time | **4.2 s** (the download of the provider, 80 MB, is not in the number) |
+  | Texts to embed | 7,641 |
+  | The embedding of the rest (5,541 texts) | **2.5 min** (about 35 texts per second) |
+  | The ten checks of §10 | **all ten pass**, 0 warnings |
+- What is still to be done: the ten questions of §10 in Pilot, the changes to the descriptions
+  of the tools where the model chose badly, and the record of what changed.
 
 ---
 

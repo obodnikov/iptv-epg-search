@@ -142,6 +142,11 @@ export async function listEpisodesTool(
 export async function listFacetsTool(ctx: CinemaToolContext): Promise<CallToolResult> {
   const settings = settingsOf(ctx);
 
+  // The URL of the provider comes first: a server without a URL has to
+  // name the settings file, not to send the model into a refresh that
+  // cannot work (design: cinema-server.md §10, check 10).
+  if (!settings.cinemaUrl) return notConfigured(ctx);
+
   // The facets of an empty catalogue would tell the model that the
   // provider has no genres at all.
   const empty = catalogueEmpty(ctx);

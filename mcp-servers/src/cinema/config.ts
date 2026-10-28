@@ -64,6 +64,15 @@ export const CINEMA_SETTINGS_SPEC: SettingsSpec = {
     'embeddings.batchSize': { min: 1, max: 500 },
     'embeddings.minTextChars': { min: 0, max: 10000 },
   },
+  patterns: {
+    // The setting holds the **name** of the variable that holds the key.
+    // The key itself belongs in the environment (the `.env` file of the
+    // repository, the Environment field of the server entry of Pilot).
+    'embeddings.apiKeyEnv': {
+      pattern: /^[A-Za-z_][A-Za-z0-9_]*$/,
+      what: 'the name of an environment variable (the key itself does not belong in this file)',
+    },
+  },
 };
 
 /** The settings of the search. */

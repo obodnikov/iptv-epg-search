@@ -70,6 +70,13 @@ export interface SettingsSpec {
   enums?: Record<string, string[]>;
   /** Paths (dot separated) with a lowest and a highest allowed value. */
   ranges?: Record<string, { min?: number; max?: number }>;
+  /**
+   * Paths (dot separated) whose value has to match a pattern.
+   *
+   * The message of the problem never holds the value: the value may be a
+   * secret (the name of the variable that holds the key, for example).
+   */
+  patterns?: Record<string, { pattern: RegExp; what: string }>;
 }
 
 export interface SettingsLoad {
@@ -101,6 +108,7 @@ function mergeValue(
   freeForm: Set<string>,
   enums: Map<string, string[]>,
   ranges: Map<string, { min?: number; max?: number }>,
+  patterns: Map<string, { pattern: RegExp; what: string }>,
 ): unknown {
   if (raw === undefined) return base;
 
@@ -130,6 +138,7 @@ function mergeValue(
             freeForm,
             enums,
             ranges,
+            patterns,
           );
       if (out[key] === undefined) delete out[key];
     }
@@ -185,6 +194,12 @@ function mergeValue(
       issues.push(`"${path}" must be one of: ${allowed.join(', ')}`);
       return base;
     }
+    const rule = patterns.get(path);
+    if (rule && !rule.pattern.test(raw)) {
+      // The value is not written down: it may be a secret.
+      issues.push(`"${path}" is not ${rule.what}`);
+      return base;
+    }
     return raw;
   }
 
@@ -202,6 +217,7 @@ export function mergeSettings(
   const freeForm = new Set(spec.freeForm ?? []);
   const enums = new Map(Object.entries(spec.enums ?? {}));
   const ranges = new Map(Object.entries(spec.ranges ?? {}));
+  const patterns = new Map(Object.entries(spec.patterns ?? {}));
 
   // The template is copied first: the caller must never be able to change
   // the template of the server by changing the settings it got.
@@ -220,6 +236,7 @@ export function mergeSettings(
     freeForm,
     enums,
     ranges,
+    patterns,
   ) as Record<string, unknown>;
 
   // URL fields are checked after the merge, so a bad URL never lands in the

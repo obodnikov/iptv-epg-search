@@ -306,6 +306,28 @@ describe('search_titles', () => {
     );
   });
 
+  it('names the settings file in every tool when the URL is not set', async () => {
+    await withServer(
+      async (harness) => {
+        // The facets of an empty catalogue would send the model into a
+        // refresh that cannot work: the URL is what is missing.
+        const facets = await harness.call('list_facets');
+        assert.equal(facets.isError, true);
+        assert.match(textOf(facets), /Cinema URL is not set/);
+        assert.match(textOf(facets), /settings\.json/);
+
+        const title = await harness.call('get_title', { title_id: 'a1b2c3d4e5f60718' });
+        assert.equal(title.isError, true);
+        assert.match(textOf(title), /Cinema URL is not set/);
+
+        const episodes = await harness.call('list_episodes', { title_id: 'a1b2c3d4e5f60718' });
+        assert.equal(episodes.isError, true);
+        assert.match(textOf(episodes), /Cinema URL is not set/);
+      },
+      { settings: { cinemaUrl: '' } },
+    );
+  });
+
   it('answers with an error when the catalogue is empty', async () => {
     const harness = await cinemaHarness({ settings: configured });
     try {
