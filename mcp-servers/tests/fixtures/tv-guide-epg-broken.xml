@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+<channel id="a"><display-name>A</display-name></channel>
+<programme start="20260614091000 +0300" stop="20260614101000 +0300" channel="a"><title lang="ru">

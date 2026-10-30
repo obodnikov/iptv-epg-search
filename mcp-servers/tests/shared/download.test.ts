@@ -23,12 +23,22 @@ let origin = '';
 
 const CONTENT = '#EXTM3U\n#EXTINF:100, Title\nhttp://example.invalid/1.m3u8\n';
 
+// The gzip magic `1f 8b` followed by a flag byte: the start of a real
+// gzip stream. A validator that only sees the decoded text cannot tell
+// a gzip file from binary noise (design: tv-guide-server.md §9).
+const GZIP_HEAD = Buffer.from([0x1f, 0x8b, 0x08, 0x00]);
+
 before(async () => {
   server = createServer((request, response) => {
     const path = request.url ?? '/';
     if (path === '/ok') {
       response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
       response.end(CONTENT);
+      return;
+    }
+    if (path === '/gzip') {
+      response.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+      response.end(GZIP_HEAD);
       return;
     }
     if (path === '/login') {
@@ -277,6 +287,28 @@ describe('downloadToFile', () => {
 
     assert.equal(result.ok, true);
     assert.equal(readFileSync(dest, 'utf8'), CONTENT);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('gives the validator the raw bytes of the head', async () => {
+    const dir = tempDir();
+    const dest = join(dir, 'epg.xmltv');
+
+    const seen: Buffer[] = [];
+    const result = await downloadToFile({
+      url: `${origin}/gzip`,
+      destPath: dest,
+      validate: (_head, headBytes) => {
+        seen.push(headBytes);
+        // The gzip magic does not survive the UTF-8 decoding of the text.
+        return headBytes[0] === 0x1f && headBytes[1] === 0x8b ? null : 'not a gzip file';
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]?.[0], 0x1f);
+    assert.equal(seen[0]?.[1], 0x8b);
     rmSync(dir, { recursive: true, force: true });
   });
 

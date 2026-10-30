@@ -298,6 +298,8 @@ export function withSnapshot<T>(db: Db, fn: () => T): T {
     committed = true;
     return result;
   } catch (error) {
+    // A transaction that was committed is never thrown back: only the work
+    // that was not committed may be.
     if (!committed) {
       try {
         db.exec('ROLLBACK;');

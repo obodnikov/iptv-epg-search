@@ -132,6 +132,21 @@ export function normalizeText(text: string): string {
 }
 
 /**
+ * The number of characters of a text.
+ *
+ * SQLite counts the characters of a text, not the units of UTF-16: a text
+ * with a character outside the basic plane is shorter in JavaScript than
+ * in SQLite. The two have to be the same, so that a text is queued for
+ * embedding on one path and skipped on the other (the queue modules of
+ * the two servers use it).
+ */
+export function charLength(text: string): number {
+  let count = 0;
+  for (const _character of text) count += 1;
+  return count;
+}
+
+/**
  * Cut a text to a length, on a word boundary when possible.
  */
 export function snippet(text: string, maxChars: number): string {

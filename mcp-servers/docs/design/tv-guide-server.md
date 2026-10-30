@@ -1,6 +1,8 @@
 # TV Guide MCP Server — Design & Implementation Plan
 
-**Status:** Proposed. Second server, after Cinema. No code yet.
+**Status:** In progress. Second server, after Cinema. **T1 (import) is done
+(2026-10-28)**; the derived fields (T2), the tools (T3) and the search by
+meaning (T4) follow.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -115,18 +117,26 @@ Samples are in the web app's git-ignored `tmp/` (June 2026 snapshot).
   Нидерланды – Швеция. Трансляция из США". Biathlon does not occur in the June sample (off
   season). Other Sweden examples: "Пограничный контроль: Швеция" (a documentary series),
   "Вселенная Филиппа Эшару (Швеция)".
-- **Repetition:** the 321,787 programmes have only 60,447 distinct (title, description)
-  pairs:
+- **Repetition:** the 321,787 programmes repeat heavily. The counts of
+  this list were corrected in T1 (2026-10-28, verified with a direct count
+  over `tmp/4a27b28d`; the numbers of the first analysis of 2026-10-25 were
+  too low):
 
-  | Groups | Distinct texts |
+  | Measure | Value |
   | --- | --- |
-  | Кино | 6,221 |
-  | Познавательные | 5,200 |
-  | Мультфильмы | 3,731 |
-  | Ultra HD | 3,015 |
-  | Общероссийские | 2,661 |
-  | Кино + Познавательные | 11,392 |
-  | all groups | 60,447 |
+  | distinct (title, description) pairs, whole file | **102,467** (102,466 after trimming) |
+  | distinct titles, whole file | 75,553 |
+  | Кино | 9,028 |
+  | Познавательные | 12,452 |
+  | Мультфильмы | 8,430 |
+  | Ultra HD | 3,259 |
+  | Общероссийские | 4,957 |
+  | Кино + Познавательные | 21,446 |
+  | programmes on EPG channels that are in no playlist group | 7,569 texts |
+
+  The import keeps one row per distinct pair (its own trimming and the
+  excluded adult group explain the small difference to the whole-file
+  count: 100,611 texts over the groups that are loaded).
 
   10,035 programmes on Кино channels have no description.
 - **Overlap with the cinema catalogue:** 1,137 EPG titles equal a catalogue title after
@@ -521,18 +531,141 @@ Template written at first start:
 Each phase ends with `npm run typecheck` and `npm test` green. The shared modules come from the
 Cinema phases ([cinema-server.md](cinema-server.md) §9).
 
-**T1 — Playlist and streaming EPG import.**
-- Playlist: header and channel attributes; `#EXTGRP` fallback; EPG URL from the header.
-- EPG:
-  - gzip detection;
-  - XML parser choice: run `saxes` and `sax` on `tmp/4a27b28d`, compare time and peak memory,
-    and their handling of a damaged fixture; record the result here;
-  - time conversion port, staging and swap, retention.
-- Tests:
-  - `epgRawToEpochSeconds` cases: `+0300`, `-0130`, a missing offset, month 13, 24:00;
-  - gzipped and plain fixtures; a programme without a description; a channel without a stream;
-  - `tvg-rec="0"`; a playlist with a bare header.
-- Measure on the real files: import time, peak memory, database size.
+**T1 — Playlist and streaming EPG import.** *(done 2026-10-28)*
+- What was built:
+  - `src/tv-guide/epg-time.ts` — the port of `epgRawToEpochSeconds` and
+    `parseEpgTime`, which applies `epgDefaultOffset` and says when it did;
+  - `src/tv-guide/playlist.ts` — the live playlist: header attributes,
+    `group-title` with the `#EXTGRP` fallback, `tvg-rec`, per-channel
+    `catchup-type`, the EPG URL candidates of the header;
+  - `src/tv-guide/epg.ts` — gzip detection by the first two bytes and the
+    streaming reader (`EpgReader` over saxes, `streamEpg` from a stream,
+    `parseEpgText` from a string) with the download check of §9;
+  - `src/tv-guide/schema.ts` — the tables of §4.1;
+  - `src/tv-guide/texts.ts` — the hash of the (title, description) pair and
+    the embedding text (T1 form: title and description; the facts of T2
+    extend it);
+  - `src/tv-guide/store.ts` — the `GuideWriter`: one synchronous
+    transaction, channels first, one row per text written before its
+    programmes (the foreign key wants it so), the orphan texts removed
+    with their keyword-index rows, every live text of the active model
+    kept in the queue;
+  - `src/tv-guide/queue.ts` — the queue of the texts, the shape of the
+    cinema one (T4 takes it);
+  - `src/tv-guide/import.ts` — the pipeline: playlist download, EPG URL
+    resolution (settings first, then the header), EPG download, the
+    unchanged skip per source (`raw/meta-playlist.json`,
+    `raw/meta-epg.json`), the import of local files for the tests and the
+    scripts;
+  - `src/tv-guide/config.ts` — the template and the rules of §9;
+  - `scripts/import-tv-real-data.ts` (npm run `import-tv-real-data`), with
+    `--now` and `--past-days` for the measurement inside the window of the
+    snapshot.
+- Shared modules that changed for it: `download.ts` gives the validator
+  the raw bytes of the head as well (the gzip magic does not survive the
+  UTF-8 decoding); `settings.ts` accepts map settings whose values are
+  objects (`freeFormObjects`, for `groupMap`); `text.ts` took `charLength`
+  over from the cinema queue (both servers use it); `db.ts` gained
+  `withTransactionAsync`, because the guide streams in while the write
+  transaction is open.
+- **The XML parser is `saxes` 6.0.0.** The benchmark of §10 ran both on
+  `tmp/4a27b28d`: saxes read the file in **0.8 s** (peak RSS 114 MB), sax
+  1.6.1 in **2.0 s** (118 MB). Both counted 1,303 channels and 321,787
+  programmes, both reported a truncated document, a stray ampersand and a
+  broken attribute quote in strict mode. saxes is actively maintained;
+  sax is not. `sax` was removed after the benchmark.
+- Two decisions the design left open, taken in T1:
+  - the **"staging and swap" of §5 is: parse into the memory first, then
+    one synchronous transaction on the live tables** — the way the cinema
+    server writes (C2). The channels, the texts and the programme rows of
+    the import are gathered while the guide streams in; nothing is written
+    until the stream has ended. The write transaction is synchronous, so
+    nothing in the process can run on the connection in the middle of it,
+    the readers keep seeing the old guide until the commit, and a guide
+    that fails to parse mid-way never touches the database. A staging
+    table of 320,000 programme keys would have doubled the disk for
+    nothing, and a write transaction held across an await would have let
+    the rest of the process see the half-written guide. The cost: the
+    import blocks the event loop for the length of its write (about 10 s
+    on the real file — a tool call that arrives in that window waits; the
+    import runs in the background and the tool that starts it answers at
+    once, D15);
+  - **the text of a programme is written when the text is first seen**, not
+    after the stream: the programmes table carries a foreign key to
+    `program_texts`, and the foreign key is checked on every insert.
+- Adult channels are **stored and marked** (`is_adult`), the same decision
+  the cinema took in C2: the filter belongs to the search (T3), not to the
+  import. The groups of `excludeGroups` are not loaded at all.
+- `family_key` is the normalised name for now (placeholder); the rules
+  without the quality and time-shift marks arrive with T2.
+- Tests (`tests/tv-guide/`): the time cases of §10, plain and gzipped
+  fixtures (the gzip file is generated in the test), a programme without a
+  description, a channel without a stream, `tvg-rec="0"`, a bare playlist
+  header, `#EXTGRP` fallback, a missing and a duplicated `tvg-id`, the
+  retention window, the excluded groups, text deduplication, a second
+  import, a broken guide that fails the import and leaves the old data,
+  the default offset, the queue with `minTextChars`, the settings
+  (template 0600, `groupMap`, `epgDefaultOffset` pattern).
+- **Measured on the real files** (`tmp/playlist.m3u` + `tmp/4a27b28d`, the
+  June 2026 snapshot; `now` 2026-06-23, `pastDays` 10 so that the whole
+  window is inside the retention):
+
+  | Fact | Value |
+  | --- | --- |
+  | Channels | 1,253 kept + 50 of the group XXX (18+) = 1,303 EPG channels |
+  | Programmes | 316,746 kept + 5,031 of the excluded group + 10 with unreadable times = 321,787 |
+  | Programmes with unreadable times | 10 — two zero-length ("dmax-hd-orig-de") and eight of `baku-az-hd` ("ANONS") whose stop lies before their start |
+  | Texts | 100,611 (the whole file holds 102,467 distinct pairs — see the corrected §2.3) |
+  | Texts in the queue | 86,040 (`minTextChars` 40) |
+  | Guide window | 2026-06-14 06:08 UTC … 2026-06-23 06:07 UTC |
+  | Import, first run | **14–15 s**, peak RSS 480–600 MB (the programme rows are held in the memory of the writer until the write) |
+  | Import, nothing changed | **5.8 s** (no new texts, no new keyword-index rows) |
+  | `data.sqlite` | 503 MB after the first import, 335 MB after the second (the pages of the first are reused) |
+
+  The target of the parent document §7.4 (a search under 300 ms) is a
+  question of T3/T4; the import runs in the background and a tool call
+  never waits for it (D15).
+- Three decisions the review of T1 added (2026-10-28):
+  - **the unchanged refresh still runs the database work**: the retention
+    window moves with the day, so the programmes that have fallen out of
+    `pastDays` are removed on the unchanged path too, with the texts that
+    only they carried (`applyRetention`), and the outcome carries the
+    sizes of the guide that is still in the database. The moment of the
+    run is deliberately **not** part of the settings signature — that
+    would force a full import every run;
+  - `embeddingsEnabled` is part of the settings signature: switching the
+    search by meaning on re-imports an unchanged guide once, so that the
+    queue is filled (`queueMissingVectors`). With the embeddings off the
+    queue is emptied — it would promise work that never runs;
+  - the queue holds the rows of the **active model only**: a changed
+    model drops the rows of the old one, and every live text of the new
+    model is queued again — also when the vectors database is not
+    attached yet (the texts are re-queued on every import with
+    `INSERT OR IGNORE`, so the model change cannot empty the queue).
+- The batching of §5 dissolved: the guide is parsed into the memory
+  first, so the programmes are written in one pass with one prepared
+  statement. What the design staged in batches of 5,000 is the memory of
+  the writer now.
+- A guide that lists its programmes before its channels imports as it
+  should: the channel checks (unknown id, excluded group) run at the
+  write, when every channel is known, not during the stream.
+- Three schema additions of §4.1, each for a reason: `program_texts.embed_text`
+  (the queue reads the text it belongs to), `program_texts.fts_rowid` (the
+  index row is removed by it when the text leaves the guide), and the
+  `vector_queue` table (filled from T1, consumed in T4).
+- One correction of §2.3 came out of the measurement: the distinct texts of
+  the whole file are 102,467, not 60,447, and the numbers of the groups
+  were too low as well. The corrected numbers stand in §2.3.
+- The review-fix-loop of T1 ran five rounds and approved the phase
+  (2026-10-28). The approved report named five non-blocking improvements
+  that belong before T3, when `get_status` starts reading the numbers:
+  `epgDefaultOffset` should be validated with the ranges of
+  `compactTimeToEpoch` (HH ≤ 23, MM ≤ 59) already in the settings;
+  `queueText` should refuse an empty embedding text even when
+  `minTextChars` is 0; the guide reader should stop feeding a file after
+  its first parse error; the retention outcome should carry the live
+  programme count; and the playlist of a refresh should be parsed once,
+  not once more for the outcome summary.
 
 **T2 — Derived fields.**
 - Group map and regions; time shift; quality and `family_key`; kinds (markers, patterns,
@@ -600,7 +733,10 @@ Descriptions and the instructions; record what changed.
 4. How far back and ahead the provider's EPG reaches (the sample covers 10 days).
 5. How long a catch-up link with an old `lutc` keeps working (§6).
 6. The biathlon example needs winter data to verify.
-7. The 89 EPG channels without a stream (16,601 programmes): searchable with
-   `has_live = false` (proposed), or hidden?
+7. ~~The 89 EPG channels without a stream (16,601 programmes): searchable with
+   `has_live = false` (proposed), or hidden?~~ **Closed in T1 (2026-10-28, decision of
+   @obodnikov):** they are imported like every channel and are **searchable**; the tools
+   mark them with `has_live = false`, and `get_program` says that the channel has no
+   stream. The search filter arrives with T3.
 8. Whether news texts are worth embedding: they change daily and are seldom searched by
    meaning.

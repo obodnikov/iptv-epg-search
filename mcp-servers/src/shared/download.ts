@@ -50,10 +50,15 @@ export interface DownloadOptions {
   userAgent?: string;
   /**
    * A check on the beginning of the file. It gets the first bytes of the
-   * download and returns null when the file is good, or the reason why it is
-   * not. A file that fails the check does not replace the last good copy.
+   * download both as decoded text and as the raw bytes, and returns null
+   * when the file is good, or the reason why it is not. A file that fails
+   * the check does not replace the last good copy.
+   *
+   * The raw bytes are there for files whose format is recognised by a
+   * magic number: the gzip header `1f 8b` of an EPG download does not
+   * survive the UTF-8 decoding of the text head.
    */
-  validate?: (head: string) => string | null;
+  validate?: (head: string, headBytes: Buffer) => string | null;
 }
 
 export interface DownloadResult {
@@ -195,18 +200,26 @@ export async function replaceFile(
 /**
  * Read the first bytes of a file as text.
  */
-async function readHead(path: string, bytes: number): Promise<string> {
+interface FileHead {
+  /** The head of the file, decoded as UTF-8. */
+  text: string;
+  /** The raw bytes of the head, for magic-number checks. */
+  bytes: Buffer;
+}
+
+async function readHead(path: string, bytes: number): Promise<FileHead> {
   try {
     const handle = await open(path, 'r');
     try {
       const buffer = Buffer.alloc(bytes);
       const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
-      return buffer.subarray(0, bytesRead).toString('utf8');
+      const head = buffer.subarray(0, bytesRead);
+      return { text: head.toString('utf8'), bytes: head }; 
     } finally {
       await handle.close();
     }
   } catch {
-    return '';
+    return { text: '', bytes: Buffer.alloc(0) };
   }
 }
 
@@ -429,7 +442,7 @@ export async function downloadToFile(options: DownloadOptions): Promise<Download
   // page of the provider must not replace a working catalogue.
   if (validate) {
     const head = await readHead(partPath, VALIDATE_HEAD_BYTES);
-    const problem = validate(head);
+    const problem = validate(head.text, head.bytes);
     if (problem) {
       await removeQuietly(partPath);
       return {

@@ -11,21 +11,12 @@
  */
 
 import { type Db } from '../shared/db.ts';
+import { charLength } from '../shared/text.ts';
 import type { PreparedTitle, WriteOptions } from './store.ts';
 
-/**
- * The number of characters of a text.
- *
- * SQLite counts the characters of a text, not the units of UTF-16: a text
- * with a character outside the basic plane is shorter in JavaScript than in
- * SQLite. The two have to be the same, so that a title is queued on one path
- * and skipped on the other.
- */
-export function charLength(text: string): number {
-  let count = 0;
-  for (const _character of text) count += 1;
-  return count;
-}
+// The helper lived here before the TV Guide needed it too; the re-export
+// keeps the old import path working.
+export { charLength };
 
 /**
  * One text of the queue.

@@ -15,10 +15,12 @@
     "check-real-data": "node scripts/check-real-data.ts",
     "import-real-data": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/import-real-data.ts",
     "embed-real-data": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/embed-real-data.ts",
-    "manual-checks": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/manual-checks.ts"
+    "manual-checks": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/manual-checks.ts",
+    "import-tv-real-data": "node scripts/import-tv-real-data.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",
+    "saxes": "6.0.0",
     "snowball-stemmers": "0.6.0",
     "sqlite-vec": "0.1.9",
     "zod": "4.6.7"

@@ -322,3 +322,36 @@ describe('SettingsStore', () => {
     assert.equal(store.settings()['refreshHours'], 9);
   });
 });
+
+describe('freeFormObjects', () => {
+  const SPEC: SettingsSpec = {
+    defaults: { groupMap: {} },
+    freeFormObjects: ['groupMap'],
+  };
+
+  it('accepts an object under an arbitrary key', () => {
+    const { settings, issues } = mergeSettings(
+      { groupMap: { 'Кино': { theme: 'film', region: 'RU' } } },
+      SPEC,
+    );
+    assert.deepEqual(issues, []);
+    assert.deepEqual(settings['groupMap'], { 'Кино': { theme: 'film', region: 'RU' } });
+  });
+
+  it('reports a value that is not an object and keeps the default', () => {
+    const { settings, issues } = mergeSettings({ groupMap: { 'Кино': 'film' } }, SPEC);
+    assert.match(issues[0] ?? "", /must be an object/);
+    assert.deepEqual(settings['groupMap'], {});
+  });
+
+  it('keeps several groups apart', () => {
+    const { settings, issues } = mergeSettings(
+      { groupMap: { 'Спорт': { theme: 'sport' }, 'Baltic': { region: 'BALTIC', timeshiftHours: 0 } } },
+      SPEC,
+    );
+    assert.deepEqual(issues, []);
+    const groupMap = settings['groupMap'] as Record<string, unknown>;
+    assert.deepEqual(groupMap['Спорт'], { theme: 'sport' });
+    assert.deepEqual(groupMap['Baltic'], { region: 'BALTIC', timeshiftHours: 0 });
+  });
+});

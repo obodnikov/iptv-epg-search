@@ -1,0 +1,4 @@
+#EXTM3U
+#EXTINF:0 group-title="Спорт" tvg-id="sport-ts" tvg-rec="7",Спорт TS
+#EXTGRP:Спорт
+http://example.invalid/s/KEY/sport.ts

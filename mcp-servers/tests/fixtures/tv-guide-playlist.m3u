@@ -1,0 +1,15 @@
+#EXTM3U url-tvg="http://example.invalid/xml/guide.gz" x-tvg-url="http://example.invalid/xml/guide.gz" catchup-type="shift"
+#EXTINF:0 group-title="Общероссийские" tvg-id="pervyj" tvg-logo="http://example.invalid/streams/pervyj.png" tvg-rec="7",Первый канал
+#EXTGRP:Общероссийские
+http://example.invalid/s/KEY/pervyj.m3u8
+#EXTINF:0 group-title="Кино" tvg-id="pervyj-hd" tvg-logo="http://example.invalid/streams/pervyj-hd.png" tvg-rec="7",Первый HD
+http://example.invalid/s/KEY/pervyj-hd.m3u8
+#EXTINF:0 tvg-id="kino-no-group" tvg-rec="0",Кинопоказ
+#EXTGRP:Кино
+http://example.invalid/s/KEY/kino.m3u8
+#EXTINF:0 group-title="XXX (18+)" tvg-id="xxx-adult" tvg-logo="" tvg-rec="7",Взрослый канал
+http://example.invalid/s/KEY/xxx.m3u8
+#EXTINF:0 group-title="Спорт" tvg-rec="7",Без идентификатора
+http://example.invalid/s/KEY/notvg.m3u8
+#EXTINF:0 group-title="Спорт" tvg-id="pervyj" tvg-rec="7",Первый канал (дубль)
+http://example.invalid/s/KEY/pervyj-dup.m3u8

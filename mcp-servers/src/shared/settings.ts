@@ -66,6 +66,13 @@ export interface SettingsSpec {
   urlFields?: string[];
   /** Paths (dot separated) that accept arbitrary keys, e.g. "countryAliases". */
   freeForm?: string[];
+  /**
+   * Paths (dot separated) that accept arbitrary keys whose values are
+   * objects, e.g. "groupMap" (a group name mapped to a small object of
+   * overrides). The contents of those objects are not validated here; the
+   * server reads them defensively.
+   */
+  freeFormObjects?: string[];
   /** Paths (dot separated) with a closed set of allowed values. */
   enums?: Record<string, string[]>;
   /** Paths (dot separated) with a lowest and a highest allowed value. */
@@ -106,6 +113,7 @@ function mergeValue(
   path: string,
   issues: string[],
   freeForm: Set<string>,
+  freeFormObjects: Set<string>,
   enums: Map<string, string[]>,
   ranges: Map<string, { min?: number; max?: number }>,
   patterns: Map<string, { pattern: RegExp; what: string }>,
@@ -119,11 +127,23 @@ function mergeValue(
     }
     const out: Record<string, unknown> = { ...base };
     const isFreeForm = freeForm.has(path);
+    // The children of a freeFormObjects path are the values of the map:
+    // each of them has to be an object, and its contents are read
+    // defensively by the server.
+    const acceptsObjects = freeFormObjects.has(path);
     for (const [key, value] of Object.entries(raw)) {
       // The path of a nested key is dot separated: "search.defaultLimit".
       const childPath = path ? `${path}.${key}` : key;
-      if (!(key in base) && !isFreeForm) {
+      if (!(key in base) && !isFreeForm && !acceptsObjects) {
         issues.push(`unknown setting "${childPath}"`);
+        continue;
+      }
+      if (acceptsObjects) {
+        if (!isPlainObject(value)) {
+          issues.push(`"${childPath}" must be an object`);
+          continue;
+        }
+        out[key] = { ...value };
         continue;
       }
       out[key] = isFreeForm
@@ -136,6 +156,7 @@ function mergeValue(
             childPath,
             issues,
             freeForm,
+            freeFormObjects,
             enums,
             ranges,
             patterns,
@@ -215,6 +236,7 @@ export function mergeSettings(
 ): { settings: Record<string, unknown>; issues: string[] } {
   const issues: string[] = [];
   const freeForm = new Set(spec.freeForm ?? []);
+  const freeFormObjects = new Set(spec.freeFormObjects ?? []);
   const enums = new Map(Object.entries(spec.enums ?? {}));
   const ranges = new Map(Object.entries(spec.ranges ?? {}));
   const patterns = new Map(Object.entries(spec.patterns ?? {}));
@@ -234,6 +256,7 @@ export function mergeSettings(
     '',
     issues,
     freeForm,
+    freeFormObjects,
     enums,
     ranges,
     patterns,

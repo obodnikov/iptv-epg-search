@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE tv SYSTEM "xmltv.dtd">
+<tv generator-info-name="example EPG">
+<channel id="pervyj">
+    <display-name lang="ru">Первый канал</display-name>
+    <icon src="http://example.invalid/streams/pervyj.png"/>
+</channel>
+<channel id="pervyj-hd">
+    <display-name lang="ru">Первый HD</display-name>
+    <icon src="http://example.invalid/streams/pervyj-hd.png"/>
+</channel>
+<channel id="kino-epg-only">
+    <display-name lang="ru">Кино без потока</display-name>
+</channel>
+<programme start="20260614091000 +0300" stop="20260614101000 +0300" channel="pervyj">
+    <title lang="ru">Вести</title>
+    <desc lang="ru">Главная новость дня и разговор с гостем в студии.</desc>
+</programme>
+<programme start="20260614100000 +0300" stop="20260614115000 +0300" channel="pervyj">
+    <title lang="ru">Жить здорово</title>
+</programme>
+<programme start="20260614120000 +0300" stop="20260614134000 +0300" channel="pervyj-hd">
+    <title lang="ru">х/ф Бык</title>
+    <desc lang="ru">Драма о трудовых буднях. Реж.: Борис Хлебников. В ролях: Александр Яценко. Россия, 2019, драма</desc>
+</programme>
+<programme start="20260614120000 +0300" stop="20260614134000 +0300" channel="kino-epg-only">
+    <title lang="ru">х/ф Бык</title>
+    <desc lang="ru">Драма о трудовых буднях. Реж.: Борис Хлебников. В ролях: Александр Яценко. Россия, 2019, драма</desc>
+</programme>
+<programme start="20260615120000 +0300" stop="20260615134000 +0300" channel="pervyj">
+    <title lang="ru">Футбол. ЧМ-2026. Нидерланды – Швеция. Трансляция из США</title>
+    <desc lang="ru">Прямая трансляция из США.</desc>
+</programme>
+<programme start="20260613120000 +0300" stop="20260613134000 +0300" channel="pervyj">
+    <title lang="ru">Вчера в городе</title>
+    <desc lang="ru">Выпуск позавчерашнего дня.</desc>
+</programme>
+</tv>
