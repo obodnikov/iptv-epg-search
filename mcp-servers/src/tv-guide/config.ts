@@ -82,6 +82,20 @@ export const TV_GUIDE_SETTINGS_SPEC: SettingsSpec = {
       what: 'the name of an environment variable (the key itself does not belong in this file)',
     },
   },
+  // The offset of the times that have none has to be a real offset: the
+  // hours may not be more than 23 and the minutes not more than 59. The
+  // pattern above only holds the form of the offset.
+  checks: {
+    epgDefaultOffset: (value: string): string | null => {
+      const match = /^([+-])(\d{2})(\d{2})$/.exec(value.trim());
+      if (!match) return 'an offset in the form +HHMM, e.g. +0300';
+      const hours = Number(match[2]);
+      const minutes = Number(match[3]);
+      if (hours > 23) return 'the hours of the offset may not be more than 23';
+      if (minutes > 59) return 'the minutes of the offset may not be more than 59';
+      return null;
+    },
+  },
 };
 
 /** The settings of the search. */

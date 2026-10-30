@@ -287,6 +287,38 @@ export const COUNTRY_CODES: Readonly<Record<string, string>> = {
   // Other
   'antarctica': 'AQ',
   'антарктида': 'AQ',
+
+  // The names that the programme guide writes (verified 2026-10-30 against
+  // the sample of the guide, `tmp/4a27b28d`).
+  //
+  // The guide writes the country of a film in the language of the film and
+  // in the genitive ("Трансляция из Мексики"), and the playlist names its
+  // groups in the language of the channel ("Deutschland", "Türkiye").
+  'чешская республика': 'CZ',
+  'корея': 'KR',
+  'маврикий': 'MU',
+  'южная африка': 'ZA',
+  'черногорения': 'ME',
+  'северная македония': 'MK',
+  'франція': 'FR',
+  'південна корея': 'KR',
+  'великобританія': 'GB',
+  'італія': 'IT',
+  'kanada': 'CA',
+  'сш': 'US',
+  'белоруссия': 'BY',
+  'deutschland': 'DE',
+  'türkiye': 'TR',
+  // The countries whose name holds a hyphen: the guide writes them with
+  // one, and they are one country.
+  'коста-рика': 'CR',
+  'costa rica': 'CR',
+  'сан-марино': 'SM',
+  'san marino': 'SM',
+  'гвинея-бисау': 'GW',
+  'guinea-bissau': 'GW',
+  'guinea bissau': 'GW',
+  'босния-герцеговина': 'BA',
 };
 
 /** ISO code to the English name used in `list_facets`. */
@@ -313,8 +345,10 @@ export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
   CL: 'Chile',
   CN: 'China',
   CO: 'Colombia',
+  CR: 'Costa Rica',
   CS: 'Czechoslovakia',
   CU: 'Cuba',
+  GW: 'Guinea-Bissau',
   CY: 'Cyprus',
   CZ: 'Czech Republic',
   DD: 'East Germany',
@@ -371,6 +405,7 @@ export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
   MN: 'Mongolia',
   MO: 'Macao',
   MT: 'Malta',
+  MU: 'Mauritius',
   MV: 'Maldives',
   MX: 'Mexico',
   MY: 'Malaysia',
@@ -393,6 +428,7 @@ export const COUNTRY_NAMES: Readonly<Record<string, string>> = {
   RW: 'Rwanda',
   SA: 'Saudi Arabia',
   SE: 'Sweden',
+  SM: 'San Marino',
   SG: 'Singapore',
   SI: 'Slovenia',
   SK: 'Slovakia',

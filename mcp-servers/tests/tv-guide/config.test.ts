@@ -76,6 +76,22 @@ describe('the TV Guide settings', () => {
     assert.equal(bad.settings['epgDefaultOffset'], '+0000');
   });
 
+  it('refuses a default offset whose hours or minutes do not exist', () => {
+    // The form is right, the offset is not: +9999 is not a time of the
+    // day, and neither is +0060.
+    const hours = mergeSettings({ epgDefaultOffset: '+9999' }, TV_GUIDE_SETTINGS_SPEC);
+    assert.notEqual(hours.issues.length, 0);
+    assert.equal(hours.settings['epgDefaultOffset'], '+0000');
+
+    const minutes = mergeSettings({ epgDefaultOffset: '+0060' }, TV_GUIDE_SETTINGS_SPEC);
+    assert.notEqual(minutes.issues.length, 0);
+    assert.equal(minutes.settings['epgDefaultOffset'], '+0000');
+
+    // The biggest real offset is fine.
+    const edge = mergeSettings({ epgDefaultOffset: '+2359' }, TV_GUIDE_SETTINGS_SPEC);
+    assert.deepEqual(edge.issues, []);
+  });
+
   it('holds tonightFromHour to the hours of the day', () => {
     const bad = mergeSettings({ tonightFromHour: 25 }, TV_GUIDE_SETTINGS_SPEC);
     assert.notEqual(bad.issues.length, 0);

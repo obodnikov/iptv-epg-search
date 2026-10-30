@@ -64,3 +64,40 @@ test('text and CDATA mixed in one element are joined', () => {
   assert.equal(seen[0]?.title, 'Начало середина конец');
   assert.equal(seen[0]?.description, 'с & сущностью');
 });
+
+test('the reader stops at the first broken place of the document', () => {
+  const seen: string[] = [];
+
+  // The second programme is broken: its title is never closed. The third
+  // one is well-formed, but it comes after the break and must not be read.
+  assert.throws(
+    () =>
+      parseEpgText(
+        [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<tv>',
+          '<channel id="a"><display-name lang="ru">A</display-name></channel>',
+          '<programme start="20260614091000 +0300" stop="20260614101000 +0300" channel="a">',
+          '<title lang="ru">Первый</title>',
+          '</programme>',
+          '<programme start="20260614101000 +0300" stop="20260614111000 +0300" channel="a">',
+          '<title lang="ru">Сломанный',
+          '</programme>',
+          '<programme start="20260614111000 +0300" stop="20260614121000 +0300" channel="a">',
+          '<title lang="ru">Третий</title>',
+          '</programme>',
+          '</tv>',
+        ].join('\n'),
+        {
+          onChannel: () => {},
+          onProgramme: (programme) => {
+            seen.push(programme.title);
+          },
+        },
+      ),
+    /could not be parsed/,
+  );
+
+  // The programme before the break was read; the one after it was not.
+  assert.deepEqual(seen, ['Первый']);
+});

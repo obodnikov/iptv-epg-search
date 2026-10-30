@@ -1,8 +1,7 @@
 # TV Guide MCP Server — Design & Implementation Plan
 
-**Status:** In progress. Second server, after Cinema. **T1 (import) is done
-(2026-10-28)**; the derived fields (T2), the tools (T3) and the search by
-meaning (T4) follow.
+**Status:** In progress. Second server, after Cinema. **T1 (import) and T2 (derived fields)
+are done (2026-10-30)**; the tools (T3) and the search by meaning (T4) follow.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -251,7 +250,7 @@ is about 60,000 rows instead of 320,000.
   | XXX (18+) | adult | NULL | excluded by default |
   | Россия +2ч / +4ч / +7ч | general | RU | time shift 2 / 4 / 7 h |
   | Israel, Deutschland, USA, UK, Украина, Armenia, Türkiye, Azerbaijan, Беларусь | general | IL, DE, US, GB, UA, AM, TR, AZ, BY | from `countries.ts` |
-  | Baltic | general | BALTIC | names seen are Lithuanian (LNK, LRT, TV3 LT); checked in T2 |
+  | Baltic | general | BALTIC | the three Baltic states: 74 Lithuanian, 44 Latvian and 32 Estonian channels (measured in T2) |
 
   An **unknown group** (another provider): region from `countries.ts` on the group name
   ("Deutschland" → DE); theme from the closest of the theme words by meaning when vectors
@@ -281,6 +280,26 @@ is about 60,000 rows instead of 320,000.
    enough. The threshold is set in T4.
 5. Otherwise `other`.
 
+**The order of the sources changed in T2** (2026-10-30), and the order is written down
+once, in `src/tv-guide/kind.ts`, with the strength of every source:
+
+| Source | Strength | What it is |
+| --- | --- | --- |
+| `marker` | 4 | the provider names the kind itself ("х/ф") |
+| `pattern` | 3 | the provider names it in the title or in the genre ("Футбол.", "ток-шоу") |
+| `meaning` | 3 | the meaning of the text (phase T4) |
+| `channel` | 2 | the theme of the channel |
+| `ending` | 1 | the film ending with a year — an inference, not a word of the provider |
+| `none` | 0 | nothing said anything |
+
+The theme of the channel therefore comes **before** the weak inference of the film ending
+and **after** the pattern: a documentary channel shows documentaries, also the ones whose
+description names them a film ("… Россия, 2015, документальный фильм"), and a sports
+broadcast on a news channel is a sport programme. Two more sources were added in T2, both
+below the theme: the **genre** of the description ("ток-шоу" → `show`, "документальный" →
+`documentary`, "анимация" → `animation`) and the **film ending with a year** → `film`
+(source `ending`).
+
 ### 4.4 Extractors
 
 - **Film ending**: in the last sentence(s) of the description:
@@ -294,6 +313,22 @@ is about 60,000 rows instead of 320,000.
   ("из Мексики"), so matching to `countries.ts` compares stemmed forms.
 - **Sport**: the first title segment, when it is in the sport list.
 - The `⋗` mark and the type marker are removed from `title` and kept as flags.
+
+**The rules of the extraction changed in T2** (2026-10-30), after the measurement of the
+real file:
+- the provider writes a **third credit field**, "Вед.:" (the host of a show, 4,366
+  programmes), and the country list stands after the last credit field;
+- a credit is **not** cut at the first full stop — the names carry initials ("Реж.: А.
+  Иванов", "В ролях: Дж. Смит, Том Харди"). **A credit ends at the next credit field or at
+  the country list, nothing else**;
+- the country list is accepted only when at least one of its names is a country the table
+  knows; the descriptions of the serial programmes of another channel end with a season
+  number and a year ("Сезон 5, 2019"), and those are not a production;
+- a name that is a country on its own is one country, even when it holds a hyphen
+  ("Коста-Рика"); a name that is not a country is split on the hyphen only when every piece
+  is one ("Великобритания-Германия-США");
+- the venue carries the mark of the age limit ("Казани (12+)"), which comes off — the data
+  holds a broken form of it as well ("Канады (1").
 
 ### 4.5 Ids
 
@@ -667,18 +702,252 @@ Cinema phases ([cinema-server.md](cinema-server.md) §9).
   programme count; and the playlist of a refresh should be parsed once,
   not once more for the outcome summary.
 
-**T2 — Derived fields.**
-- Group map and regions; time shift; quality and `family_key`; kinds (markers, patterns,
-  theme); film-ending, venue and sport extractors.
-- Real-data script prints coverage:
-  - kind distribution;
-  - the share of х/ф texts with countries and year (expected near 5,244 / 7,358);
-  - venues found.
-- Tests:
-  - endings with several countries, without genres, without a year;
-  - "Трансляция из США";
-  - markers after "⋗";
-  - `family_key` for "Первый HD" / "Первый канал (+2)".
+**T2 — Derived fields.** *(done 2026-10-30)*
+- What was built:
+  - `src/tv-guide/channel-facts.ts` — the quality of a channel name (a port of
+    `search.js:80-91`, with the marks matched as words, so that "4Kids" is not a 4K
+    channel), the time shift of a name ("Россия +2ч", "Первый канал (+2)") and the
+    **family key** (the name without the quality and the time-shift marks);
+  - `src/tv-guide/groups.ts` — the built-in table of §4.2 (22 groups), the overrides of
+    the setting `groupMap`, the region of an unknown group from the country table and
+    the theme of an unknown group from the words of its name;
+  - `src/tv-guide/extract.ts` — the film ending (the director, the cast, the countries,
+    the year, the genres), the venue and the sport;
+  - `src/tv-guide/kind.ts` — the kinds of §4.3 and the sources they come from;
+  - `src/tv-guide/texts.ts` — the derived text: the marks off the title, the facts, the
+    embedding text and its hash.
+- The phase also **split the modules that grew too large** (the rule of AI_MCP.md: a
+  file stays under ~600 lines):
+  - `src/tv-guide/store.ts` — the writer of one guide (the channels, the texts, the
+    programmes);
+  - `src/tv-guide/channel-rows.ts` — the row of a channel and its derived fields;
+  - `src/tv-guide/text-rows.ts` — the row of a text, its keyword-index row and its
+    countries;
+  - `src/tv-guide/retention.ts` — the window of the guide and the texts that left;
+  - `src/tv-guide/import.ts` — the door of the import: the lock and the answers;
+  - `src/tv-guide/import-core.ts` — the parse of a guide and its write;
+  - `src/tv-guide/refresh-pipeline.ts` — the downloads of a refresh and their import;
+  - `src/tv-guide/lock.ts` — the lock of the working folder, for the import.
+- The rules of the extraction, measured on the sample (`tmp/4a27b28d`, 2026-10-30):
+  - the **country list** stands at the end of the description, after the last credit
+    field. The provider writes a third field the design did not name — **"Вед.:"** (the
+    host of a show, 4,366 programmes) — and the list has to come after it: "… Реж.: Роман
+    Бутовский. Вед.: Дмитрий Борисов. Россия, 2005, ток-шоу";
+  - the list is **`<countries>, <year>[, <genres>]`** and it is accepted only when at
+    least one of the names is a country the table knows. The descriptions of the serial
+    programmes of another channel end with a season number and a year ("Сезон 5, 2019"),
+    and those are not a production;
+  - the provider writes several countries in one part when it joins them with a hyphen
+    ("Великобритания-Германия-Ирландия-США, 2011, комедия"), and the parts are split on
+    the hyphen;
+  - the countries are written in the language of the film and in the genitive
+    ("Мексики", "Турции", "Белоруссии"). The lookup compares the **stems** — the
+    Snowball stemmer folds "мексика" and "мексики" into "мексик" — and the country table
+    got the names it was missing ("чешская республика", "корея", "маврикий",
+    "южная африка", "черногорения", "северная македония", "белоруссия", "сш",
+    "deutschland", "türkiye", …);
+  - the **venue** stands in the title ("Трансляция из Мексики") and carries the mark of
+    the age limit ("Казани (12+)"), which comes off. The data holds a broken form of it
+    as well ("Канады (1") and a venue with the names of the performers inside it;
+  - the **sport** stands at the start of the title, followed by a full stop. The sports
+    of the sample: Футбол 1,211 programmes, Автоспорт 205, Велоспорт 150, Гандбол 114,
+    Хоккей 109, Волейбол 104, Регби 74, Бокс 57, Баскетбол 54, Теннис 50, Плавание 30,
+    Фигурное катание 8.
+- Four decisions the design left open, taken in T2:
+  - **the vector is keyed by the hash of the embedding text**, not by the hash of the
+    source pair. Phase T2 changed the embedding text (it gained the facts of the text),
+    and a vector has to describe what was embedded; the Cinema server works the same way
+    (`textHash`, src/cinema/keys.ts:72). The two hashes live side by side in the row of
+    the text: `text_hash` is the identity, `embed_hash` is the key of the vector, and the
+    queue of the embeddings is keyed by it too. Without this the vectors of the texts
+    that were embedded before T2 would have described the old text, and
+    `queueMissingVectors` would never have queued them again;
+  - **the kind of a text is decided by the text**, and the theme of the channel is a
+    fallback: the same text airs on a sports channel and on a general one, and the theme
+    of a channel is a property of an **airing**. The writer gives the theme to the texts
+    whose channels agree on it; the search (T3) falls back to the theme of the channel of
+    the airing. The order of the sources: the marker of the provider, then the pattern
+    (the sport, the genre of the description, the film ending), then the theme of the
+    channel, then the meaning (T4);
+  - the design names the kind "show" but does not say where it comes from: the **genre**
+    of the description names it ("ток-шоу"), and it names the documentaries
+    ("документальный") and the animated films ("анимация") as well;
+  - the **film ending with a year** is a proof that the programme is a production, and
+    it gives the kind "film" to the texts that carry no marker. It is weaker than the
+    theme of the channel: a documentary channel shows documentaries, also the ones whose
+    description names them a film.
+- The five improvements the review of T1 named are done (they belonged before T3, where
+  `get_status` starts reading the numbers):
+  - `epgDefaultOffset` is checked with the ranges of an offset (the hours not more than
+    23, the minutes not more than 59) — the settings module got a `checks` entry for
+    it, because a pattern cannot hold the value;
+  - `queueText` refuses an empty embedding text, even when `minTextChars` is zero;
+  - the guide reader stops feeding the file after its first parse error, and the
+    elements after the break are not read;
+  - the outcome of the retention carries the number of the live programmes;
+  - the playlist of a refresh is parsed once, not three times.
+- Tests (`tests/tv-guide/derived.test.ts`, 40 cases, and 5 more in the import test):
+  - the endings with several countries, with the countries joined by a hyphen, without
+    genres, without a year, with "Вед.:", with the cast and the host in front of the
+    list, and a year that belongs to a sentence and not to a film;
+  - "Трансляция из США", "Трансляция из Казани (12+)" and the broken mark of the age;
+  - the markers after "⋗", and the marker in upper case;
+  - the family key of "Первый HD", "Первый канал (+2)", "Россия 1 HD" and "Россия 1 (+2)";
+  - the quality of "4Kids" (not a 4K channel);
+  - the group map, the overrides of the settings, an unknown group;
+  - the derived fields of the texts and of the channels end to end, the people in the
+    keyword index, the queue keyed by the embedding text, and the rewrite of the texts
+    whose version of the derivation differs.
+- **Measured on the real files** (`tmp/playlist.m3u` + `tmp/4a27b28d`, the June 2026
+  snapshot; `now` 2026-06-23, `pastDays` 10 so that the whole window is inside the
+  retention):
+
+  | Fact | Value |
+  | --- | --- |
+  | Channels | 1,253 kept + 50 of the group XXX (18+) = 1,303 EPG channels |
+  | Programmes | 316,746 kept + 5,031 of the excluded group + 10 with unreadable times = 321,787 |
+  | Texts | 100,611 (the whole file holds 102,467 distinct pairs — see the corrected §2.3) |
+  | Texts in the queue | 94,820 (`minTextChars` 40) |
+  | Import, first run | **21.6 s**, peak RSS 607 MB |
+  | Import, nothing changed | **9.7 s** (no new texts, no rewritten facts) |
+  | Import, the derivation changed | **21.1 s** (the facts of the 100,611 texts are written again) |
+  | `data.sqlite` | 559 MB after the first import, 363 MB after the second (the pages of the first are reused) |
+
+  The kinds of the 100,611 texts:
+
+  | Kind | Texts | Source |
+  | --- | --- | --- |
+  | other | 68,406 | none |
+  | documentary | 10,736 | the theme of the channel |
+  | kids | 4,030 | the theme of the channel |
+  | film | 2,924 | the marker "х/ф" |
+  | series | 2,419 | the marker "т/с" |
+  | animated_series | 2,243 | the marker "м/с" |
+  | sport | 2,135 | the theme of the channel |
+  | animation | 2,117 | the marker "м/ф" |
+  | sport | 1,175 | the pattern (the name of the sport) |
+  | news | 1,083 | the theme of the channel |
+  | film | 950 | the film ending with a year |
+  | documentary | 873 | the marker "д/ф" |
+  | docuseries | 866 | the marker "д/с" |
+  | music | 536 | the theme of the channel |
+  | show | 104 | the genre of the description |
+  | documentary | 7 | the genre of the description |
+  | film | 6 | the theme of the channel |
+  | animation | 1 | the genre of the description |
+
+  The facts of the texts: 5,569 texts carry a year, 6,992 a director, 5,113 a cast, 4,899
+  genres and 5,569 the countries of the production. The most frequent countries of the
+  productions are Россия (1,812 texts), США (1,493), Великобритания (538), СССР (430),
+  Франция (349) и Германия (349). The venues that were found: США (136 texts), Канады
+  (38), Мексики (23), Казани (13), Омска (8), Турции (6).
+
+  The channels: the themes and the regions of the table of §4.2 came out as it says
+  (Кино → film/RU with 160 channels, Israel → general/IL with 126, Deutschland →
+  general/DE with 88, Baltic → general/BALTIC with 78, …), and the 105 channels that
+  are in no group of the playlist (the EPG channels without a stream and the group
+  "Ultra HD") have no theme and no region. The time shift of the names: 1,195 channels
+  without a shift, 19 with two hours, 19 with four, 17 with seven, and two with one
+  hour and one with eight — the provider has a "+1" and a "+8" copy of a channel.
+- Two things the design says that the data does not deliver, and what was done:
+  - the design expects the family key to join "Первый HD", "Первый канал" and "Первый
+    канал (+2)" into one key. The provider names them differently, so the key of "Первый
+    HD" is `первый` and the key of "Первый канал" is `первый канал`: **the time-shifted
+    copies share the key** ("Первый канал (+2)" and "Первый канал"), and the two
+    qualities of one channel are joined the other way round, by the programme and the
+    time (the rule of the web app, `filterPreferHD`);
+  - the design counts the texts with the film ending over the programmes; the numbers
+    of the sample are the numbers of the **texts** here, and the texts repeat heavily
+    (8,455 programmes carry the marker "х/ф", 2,924 texts do).
+- The review of the phase (2026-10-30, the first round of the review-fix loop) found
+  ten issues; the blocking one and the seven middle ones are fixed:
+  - the credits are not cut at the first full stop: the names carry initials ("Реж.: А.
+    Иванов", "В ролях: Дж. Смит, Том Харди"), and a full stop inside a name is not the
+    end of the credit. **A credit ends at the next credit field or at the country list —
+    nothing else.** The texts with a director went from 4,306 to 6,992;
+  - the country list is read from the sentences of the whole description and the field
+    that comes last in the **text** wins (a host written before the director);
+  - a name that is a country on its own is one country, even when it holds a hyphen
+    ("Коста-Рика"); a name that is not a country is split on the hyphen only when every
+    piece is a country ("Великобритания-Германия-США");
+  - the quality marks are taken off the name without eating the letter next to them
+    ("ПервыйHD" → `первый`), and the case of the mark does not matter;
+  - the type markers live in one table now (`KIND_MARKERS` in `kind.ts`), and the title
+    is cleaned with it;
+  - a text without a title and without a description has nothing to embed: its
+    embedding text is empty and it never reaches the queue;
+  - the order of the sources of the kind is written down in one place (`kind.ts`), with
+    the strength of every source: the marker of the provider (4), the pattern of the title
+    or of the genre (3), the theme of the channel (2), the film ending with a year (1).
+    The theme of the channel therefore wins over the weak inference of the ending and
+    loses against the words of the provider: a sports broadcast on a news channel is a
+    sport programme, and a documentary channel shows documentaries, also the ones whose
+    description names them a film. The source "ending" was added to the list of §4.1;
+  - the write reads the texts that are already in the database in one query and keeps
+    the answer of the group of a channel, so that a guide of a hundred thousand texts is
+    not written with a query per text.
+- The second round of the review (2026-10-30) found six issues; they are fixed too:
+  - the kind of a text is written again when the **channels around it changed**: the
+    theme of a channel is a property of the airings, and the guide moves;
+  - the country list is not split on the hyphen before the lookup — only the lookup can
+    tell "Коста-Рика" (one country) from "Великобритания-Германия" (two). The countries
+    with a hyphen came to the country table with the phase ("Коста-Рика", "Сан-Марино",
+    "Гвинея-Бисау");
+  - `markerOf` reads the marker with the same pattern the title is cleaned with, so the
+    case does not matter any more ("Х/Ф …");
+  - the coverage of the real-data script is driven by the table of the markers;
+  - the tests cover the initials of the credits, the country with a hyphen and the two
+    cases where the theme of the channel meets the pattern of the title.
+- The third round of the review (2026-10-30) found six issues; they are fixed too:
+  - the theme of a group that is not in the table is read from the **stems** of its
+    words, and the stem of the keyword has to be the beginning of the stem of the word:
+    "мультфильмы" holds "фильм" in the middle of it and is a cartoon, not a film;
+  - the fallback runs only for the groups that are in neither the table nor the
+    overrides: the group "Ultra HD" holds films and sport, and nothing may be guessed
+    about it;
+  - the groups are looked up without the case ("кино" is "Кино"), and the Russian time
+    shifts are found with a pattern that folds the case of every script;
+  - the film ending is the whole ending — the director, the cast, the countries or the
+    year — and not only the director and the countries;
+  - the unused imports of `texts.ts` are gone;
+  - the tests cover the fallback of the theme, the case of the groups and the identity
+    of a text whose facts changed.
+- The fourth round of the review (2026-10-30) found five issues; they are fixed too:
+  - the hour suffix of the time shift is written in Cyrillic ("+2ч", "+2часа"), and a
+    word boundary after a Cyrillic letter never matches: the suffix stayed in the name
+    and the copy of the channel did not share the family key with the original. The
+    suffix is spelled out now;
+  - the group "Ultra HD" came to the table with a theme and a region of nothing, so that
+    the fallback of the words cannot retag it;
+  - the venue is cut at the end of its sentence, but not at the full stop of an
+    abbreviation ("Трансляция из г. Москвы");
+  - a text whose kind changed but whose embedding text did not keeps its queue row: the
+    vector of it is the vector it already has, and it must not be embedded again;
+  - the tests of the fallback point at the groups that are really not in the table
+    ("France", "Кинотеатры", "Детские мультфильмы", "Мультфильмы мира"), and the groups
+    of the table are checked apart.
+- The fifth round of the review (2026-10-30) found seven issues; they are fixed too:
+  - the plus of the time shift has to stand on its own: the channel "1+1" of the group
+    "Украина" is not a copy of another channel, and the plus inside the name is not a
+    shift;
+  - only the form with the plus marks the copy in the name: "Discovery (2)" keeps its
+    number, and "Первый канал (+4)" is a copy;
+  - **the overrides of the groups reach the import**: the settings become the options
+    of the import in one place (`importOptionsOf`), and the server (T3), the local
+    script and the tests all go through it. The script reads the settings of its
+    working folder — the merge with the template happens always, so a file that is not
+    there means the defaults and not nothing;
+  - a text whose row is missing from the keyword index gets one when it is written
+    again;
+  - the sport and the venue are read once per text;
+  - the markers of the coverage query are bound, not pasted into the SQL;
+  - the tests cover the queue of a text whose embedding text did not change, the
+    overrides of the groups in the import, the plus that is not a shift and the number
+    in the name.
+- The review-fix loop of the phase ran five rounds (the cap of the skill) and ended
+  without the approval of the service. Every issue of the five reports is fixed, and
+  the phase ends with `npm run typecheck` and `npm test` green (611 tests). The next
+  phase should open with one more round of the review.
 
 **T3 — Tools, words only.**
 - All eight tools; periods; `hide_repeats` / `prefer_hd`; catch-up rule; instructions.
@@ -726,10 +995,19 @@ Descriptions and the instructions; record what changed.
 
 ## 12. Open items (TV Guide)
 
-1. Meaning of `⋗` (1,107 titles). Compare with airing times: is it set exactly on live
-   broadcasts? (T2)
+1. ~~The meaning of `⋗` (1,107 titles). Compare with airing times: is it set exactly on live
+   broadcasts?~~ **Measured in T2 (2026-10-30):** no title string appears both with and
+   without the mark, and the marked airing of an event differs in the time from the
+   unmarked repeatings ("ЧМ-2026. Испания – Кабо-Верде": marked at 18:00, unmarked at
+   07:25, 13:40 and 18:30). Every marked programme of the June snapshot is a sport
+   broadcast. It marks a live broadcast — but the snapshot holds only the World Cup, so
+   it stays a flag (`live_mark`) and the kind of the marked texts comes from the sport
+   rules, not from the mark.
 2. Catch-up types other than `shift` (§6).
-3. Region of "Baltic": Lithuania only, or Latvia and Estonia too? (T2)
+3. ~~Region of "Baltic": Lithuania only, or Latvia and Estonia too?~~ **Measured in T2
+   (2026-10-30):** the group holds all three Baltic states — 74 channels with the
+   Lithuanian suffix (LNK, LRT, TV3 LT), 44 Latvian (LTV1, TV3 LV) and 32 Estonian
+   (the `-ee` ones). The region stays the group code "BALTIC": it is not a country.
 4. How far back and ahead the provider's EPG reaches (the sample covers 10 days).
 5. How long a catch-up link with an old `lutc` keeps working (§6).
 6. The biathlon example needs winter data to verify.

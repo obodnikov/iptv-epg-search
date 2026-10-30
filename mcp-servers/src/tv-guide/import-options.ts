@@ -5,6 +5,8 @@
  * use them without a cycle.
  */
 
+import type { GroupOverride, TvGuideSettings } from './config.ts';
+
 /**
  * Where the import writes what it has to say.
  *
@@ -28,6 +30,13 @@ export interface ImportOptions {
   liveUrl: string;
   /** The groups that are not loaded at all. */
   excludeGroups: string[];
+  /**
+   * The overrides of the groups, from the setting `groupMap`.
+   *
+   * They decide the theme, the region and the time shift of a group, and
+   * they win over the built-in table of `groups.ts`.
+   */
+  groupMap?: Record<string, GroupOverride>;
   /** The offset for times that carry none, as `+HHMM`. */
   epgDefaultOffset: string;
   /** How long ended programmes are kept, in days. */
@@ -54,7 +63,6 @@ export interface ImportOptions {
   /** Import even when a download did not change. */
   force?: boolean;
 }
-
 /**
  * What the write into the database did.
  */
@@ -63,10 +71,26 @@ export interface WriteResult {
   channels: number;
   /** The programmes that were written. */
   programmes: number;
+  /**
+   * The programmes that are in the guide after the write.
+   *
+   * It is the number of the live guide, not the number of the rows that
+   * this write inserted: the retention window removes the old ones.
+   */
+  liveProgrammes: number;
   /** The distinct texts of the guide after the write. */
   texts: number;
   /** The texts that were new to this import. */
   newTexts: number;
+  /**
+   * The texts whose derived fields were written again.
+   *
+   * They are the texts that were in the database with an older version of
+   * the derivation.
+   */
+  derivedTexts: number;
+  /** The country names that the country table does not know. */
+  unknownCountries: number;
   /** The rows of the keyword index that were written. */
   ftsRows: number;
   /** Programmes dropped because their group is excluded. */
@@ -142,14 +166,53 @@ export interface WriteOptions {
 }
 
 /**
+ * The options of the import, out of the settings of the server.
+ *
+ * This is the one place where the settings become the options of the
+ * import: the server (phase T3), the local script and the tests all go
+ * through it, and none of them forgets a field.
+ *
+ * @param settings The settings of the TV Guide server.
+ * @param now The moment of the import, in epoch seconds.
+ * @param extra The fields that do not come from the settings.
+ */
+export function importOptionsOf(
+  settings: TvGuideSettings,
+  now: number,
+  extra: {
+    dataDir?: string;
+    log?: ImportLogger;
+    onPhase?: (phase: 'downloading' | 'importing') => void;
+    force?: boolean;
+  } = {},
+): ImportOptions {
+  return {
+    epgUrl: settings.epgUrl,
+    liveUrl: settings.liveUrl,
+    excludeGroups: settings.excludeGroups,
+    groupMap: settings.groupMap,
+    epgDefaultOffset: settings.epgDefaultOffset,
+    pastDays: settings.pastDays,
+    embeddingModel: settings.embeddings.model,
+    minTextChars: settings.embeddings.minTextChars,
+    embeddingsEnabled: settings.embeddings.enabled,
+    now,
+    ...extra,
+  };
+}
+
+/**
  * An empty write result, for the failures and the unchanged runs.
  */
 export function emptyWriteResult(): WriteResult {
   return {
     channels: 0,
     programmes: 0,
+    liveProgrammes: 0,
     texts: 0,
     newTexts: 0,
+    derivedTexts: 0,
+    unknownCountries: 0,
     ftsRows: 0,
     droppedGroupProgrammes: 0,
     droppedGroupChannels: 0,

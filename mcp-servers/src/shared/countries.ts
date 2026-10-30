@@ -11,6 +11,7 @@
  */
 
 import { COUNTRY_CODES, COUNTRY_NAMES } from './country-table.ts';
+import { stemText } from './text.ts';
 
 export { COUNTRY_CODES, COUNTRY_NAMES };
 
@@ -57,6 +58,61 @@ function aliasCode(key: string, aliases: Record<string, string>): string | null 
     return COUNTRY_CODES[value] ?? null;
   }
   return null;
+}
+
+/**
+ * The stem of a country name to its code.
+ *
+ * The guide writes a country in the genitive ("Мексики" for "Мексика"), and
+ * the Snowball stemmer folds the two forms into one ("мексик"). The table
+ * is built once and kept: the lookup happens for every country of every
+ * text of the guide.
+ */
+let stemTable: Map<string, string> | null = null;
+
+function countryStemTable(): Map<string, string> {
+  if (stemTable !== null) return stemTable;
+
+  const table = new Map<string, string>();
+  for (const [name, code] of Object.entries(COUNTRY_CODES)) {
+    const stem = stemOfCountryName(name);
+    // The first name of a stem wins: the table is written in a fixed
+    // order, and the short forms come first.
+    if (!table.has(stem)) table.set(stem, code);
+  }
+  stemTable = table;
+  return table;
+}
+
+/**
+ * The stem of a country name.
+ *
+ * A name in Cyrillic is stemmed with the Russian stemmer (the genitive is
+ * a Russian form); a name in Latin letters is stemmed with the English
+ * one, so that "Netherlands" and "Netherland" meet.
+ */
+function stemOfCountryName(name: string): string {
+  const cyrillic = /[\u0400-\u04FF]/.test(name);
+  return stemText(name, cyrillic ? 'russian' : 'english');
+}
+
+/**
+ * Map a country name to its ISO 3166-1 alpha-2 code, comparing the stems.
+ *
+ * The exact lookup comes first; the stem is the fallback, and it is what
+ * makes the genitive ("Мексики") find the country ("Мексика").
+ *
+ * @param name Country name in any language.
+ * @returns The code, or null when the name is not known.
+ */
+export function countryCodeByStem(name: string): string | null {
+  const exact = countryCode(name);
+  if (exact !== null) return exact;
+
+  const key = normalizeCountryName(name);
+  if (!key) return null;
+
+  return countryStemTable().get(stemOfCountryName(key)) ?? null;
 }
 
 /**

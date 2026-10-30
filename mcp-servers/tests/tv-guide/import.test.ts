@@ -22,6 +22,7 @@ import { stemText } from '../../src/shared/text.ts';
 import { applyTvGuideSchema } from '../../src/tv-guide/schema.ts';
 import { importTvGuideFiles, importTvGuideTexts } from '../../src/tv-guide/import.ts';
 import { validateEpgHead, headIsGzip } from '../../src/tv-guide/epg.ts';
+import { DERIVED_VERSION, embedTextHash } from '../../src/tv-guide/texts.ts';
 import type { ImportOptions } from '../../src/tv-guide/import-options.ts';
 
 const EPG = fixture('tv-guide-epg.xml');
@@ -257,6 +258,271 @@ describe('the import of the guide', () => {
     }
   });
 
+  it('writes the derived fields of the texts', async () => {
+    const h = database();
+    try {
+      await importTvGuideTexts(h.db, { playlistText: PLAYLIST, epgText: EPG }, options());
+
+      const bull = h.db.get<{
+        title: string;
+        kind: string;
+        kind_source: string;
+        year: number | null;
+        directors: string | null;
+        cast_names: string | null;
+        genres: string | null;
+        embed_text: string | null;
+        embed_hash: string | null;
+        derived_version: number;
+      }>(
+        `SELECT title, kind, kind_source, year, directors, cast_names, genres,
+                embed_text, embed_hash, derived_version
+           FROM program_texts WHERE title = 'Бык'`,
+      );
+
+      assert.ok(bull);
+      // The marker came off the title and became the kind.
+      assert.equal(bull.title, 'Бык');
+      assert.equal(bull.kind, 'film');
+      assert.equal(bull.kind_source, 'marker');
+      // The facts of the description.
+      assert.equal(bull.year, 2019);
+      assert.equal(bull.directors, 'Борис Хлебников');
+      assert.equal(bull.cast_names, 'Александр Яценко');
+      assert.deepEqual(JSON.parse(bull.genres ?? '[]'), ['драма']);
+      // The vector is keyed by the hash of the embedding text.
+      assert.ok(bull.embed_text);
+      assert.equal(bull.embed_hash, embedTextHash(bull.embed_text));
+      assert.equal(bull.derived_version, DERIVED_VERSION);
+
+      // The countries of the production.
+      const countries = h.db.all<{ raw: string; code: string }>(
+        'SELECT raw, code FROM text_countries WHERE text_hash IN (SELECT text_hash FROM program_texts WHERE title = ?)',
+        'Бык',
+      );
+      assert.deepEqual(
+        countries.map((country) => ({ raw: country.raw, code: country.code })),
+        [{ raw: 'Россия', code: 'RU' }],
+      );
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('writes the derived fields of the channels', async () => {
+    const h = database();
+    try {
+      await importTvGuideTexts(h.db, { playlistText: PLAYLIST, epgText: EPG }, options());
+
+      const channel = h.db.get<{
+        theme: string | null;
+        region: string | null;
+        quality: number;
+        family_key: string;
+        timeshift_h: number;
+      }>(
+        `SELECT theme, region, quality, family_key, timeshift_h
+           FROM channels WHERE channel_id = 'pervyj-hd'`,
+      );
+
+      assert.ok(channel);
+      // The group "Кино" of the playlist.
+      assert.equal(channel.theme, 'film');
+      assert.equal(channel.region, 'RU');
+      // The quality comes from the name of the channel.
+      assert.equal(channel.quality, 2);
+      assert.equal(channel.family_key, 'первый');
+      assert.equal(channel.timeshift_h, 0);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('puts the people of a text into the keyword index', async () => {
+    const h = database();
+    try {
+      await importTvGuideTexts(h.db, { epgText: EPG }, options());
+
+      // The director of the film is in the index.
+      const found = h.db.get<{ found: number }>(
+        'SELECT count(*) AS found FROM program_texts_fts WHERE program_texts_fts MATCH ?',
+        stemText('Хлебников'),
+      );
+      assert.equal(found?.found, 1);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('keys the queue of the embeddings on the hash of the embedding text', async () => {
+    const h = database(true);
+    try {
+      await importTvGuideTexts(h.db, { epgText: EPG }, options());
+
+      const queued = h.db.all<{ embed_hash: string }>('SELECT embed_hash FROM vector_queue');
+      assert.ok(queued.length > 0);
+
+      const hashes = h.db.all<{ embed_hash: string }>(
+        'SELECT embed_hash FROM program_texts WHERE embed_hash IS NOT NULL',
+      );
+      const known = new Set(hashes.map((row) => row.embed_hash));
+      for (const row of queued) {
+        assert.ok(known.has(row.embed_hash), row.embed_hash);
+      }
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('rewrites the derived fields when the version of the derivation changes', async () => {
+    const h = database();
+    try {
+      await importTvGuideTexts(h.db, { epgText: EPG }, options());
+
+      // The row of a text of phase T1: the neutral values and the old
+      // version of the derivation.
+      h.db.run(
+        'UPDATE program_texts SET kind = ?, kind_source = ?, derived_version = 0',
+        'other',
+        'none',
+      );
+
+      const second = await importTvGuideTexts(h.db, { epgText: EPG }, options());
+      assert.equal(second.ok, true);
+      // The text is not new, but its facts are written again.
+      assert.equal(second.write?.newTexts, 0);
+      assert.equal(second.write?.derivedTexts, 5);
+
+      const bull = h.db.get<{ kind: string }>(
+        'SELECT kind FROM program_texts WHERE title = ?',
+        'Бык',
+      );
+      assert.equal(bull?.kind, 'film');
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('writes the text again when the kind changed with the channels', async () => {
+    const h = database();
+    try {
+      // The programme has no marker; the kind comes from the theme of its
+      // channel (the group "Кино") and from the film ending.
+      const withFilm = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<tv>',
+        '<channel id="pervyj-hd"><display-name lang="ru">Первый HD</display-name></channel>',
+        '<programme start="20260614120000 +0300" stop="20260614134000 +0300" channel="pervyj-hd">',
+        '<title lang="ru">Уроки рисования</title>',
+        '<desc lang="ru">Реж.: Ким Райт. Россия, 2015, драма</desc>',
+        '</programme>',
+        '</tv>',
+      ].join('\n');
+
+      const first = await importTvGuideTexts(
+        h.db,
+        { playlistText: PLAYLIST, epgText: withFilm },
+        options(),
+      );
+      assert.equal(first.ok, true);
+      const before = h.db.get<{ kind: string; kind_source: string }>(
+        'SELECT kind, kind_source FROM program_texts LIMIT 1',
+      );
+      // The theme of the channel of the programme wins over the ending.
+      assert.equal(before?.kind, 'film');
+      assert.equal(before?.kind_source, 'channel');
+
+      // The same programme, now on a general channel: the theme says
+      // nothing, and the kind comes from the film ending.
+      const withGeneral = withFilm.replace('channel="pervyj-hd"', 'channel="pervyj"');
+      const second = await importTvGuideTexts(
+        h.db,
+        { playlistText: PLAYLIST, epgText: withGeneral },
+        options(),
+      );
+      assert.equal(second.ok, true);
+      // The text is not new, but its kind changed.
+      assert.equal(second.write?.newTexts, 0);
+      assert.equal(second.write?.derivedTexts, 1);
+
+      const after = h.db.get<{ kind: string; kind_source: string }>(
+        'SELECT kind, kind_source FROM program_texts LIMIT 1',
+      );
+      assert.equal(after?.kind, 'film');
+      assert.equal(after?.kind_source, 'ending');
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('keeps the queue of a text whose embedding text did not change', async () => {
+    const h = database(true);
+    try {
+      // The programme has no marker; the kind comes from the theme of its
+      // channel and from the film ending.
+      const withFilm = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<tv>',
+        '<channel id="pervyj-hd"><display-name lang="ru">Первый HD</display-name></channel>',
+        '<programme start="20260614120000 +0300" stop="20260614134000 +0300" channel="pervyj-hd">',
+        '<title lang="ru">Уроки рисования</title>',
+        '<desc lang="ru">Реж.: Ким Райт. Россия, 2015, драма</desc>',
+        '</programme>',
+        '</tv>',
+      ].join('\n');
+
+      await importTvGuideTexts(
+        h.db,
+        { playlistText: PLAYLIST, epgText: withFilm },
+        options(),
+      );
+      const before = h.db.all<{ embed_hash: string }>('SELECT embed_hash FROM vector_queue');
+      assert.ok(before.length > 0);
+
+      // The same programme, now on a general channel: the kind is the
+      // same, the source of it is not.
+      const withGeneral = withFilm.replace('channel="pervyj-hd"', 'channel="pervyj"');
+      const second = await importTvGuideTexts(
+        h.db,
+        { playlistText: PLAYLIST, epgText: withGeneral },
+        options(),
+      );
+      assert.equal(second.ok, true);
+
+      // The embedding text did not change, so the vector of it did not
+      // change either: the queue holds the same rows.
+      const after = h.db.all<{ embed_hash: string }>('SELECT embed_hash FROM vector_queue');
+      assert.deepEqual(
+        after.map((row) => row.embed_hash).sort(),
+        before.map((row) => row.embed_hash).sort(),
+      );
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('takes the overrides of the groups from the settings', async () => {
+    const h = database();
+    try {
+      const outcome = await importTvGuideTexts(
+        h.db,
+        { playlistText: PLAYLIST, epgText: EPG },
+        options({ groupMap: { Кино: { theme: 'sport', region: 'DE' } } }),
+      );
+
+      assert.equal(outcome.ok, true);
+      const channel = h.db.get<{ theme: string | null; region: string | null }>(
+        `SELECT theme, region FROM channels WHERE channel_id = 'pervyj-hd'`,
+      );
+      // The group "Кино" of the playlist, with the overrides of the
+      // settings.
+      assert.equal(channel?.theme, 'sport');
+      assert.equal(channel?.region, 'DE');
+    } finally {
+      h.cleanup();
+    }
+  });
+
   it('a second import of the same guide writes no new texts', async () => {
     const h = database();
     try {
@@ -444,6 +710,43 @@ describe('the import of the guide', () => {
       assert.equal(outcome.error, undefined);
       // "Жить здорово" has no description; its text is the title only.
       assert.equal(outcome.write?.queueSize, 4);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('leaves an empty embedding text out of the queue', async () => {
+    const h = database(true);
+    try {
+      // A programme with an empty title and an empty description: there is
+      // nothing to embed, even when the minimum length is zero.
+      const empty = EPG.replace(
+        '<title lang="ru">Жить здорово</title>',
+        '<title lang="ru"></title>',
+      );
+      const outcome = await importTvGuideTexts(
+        h.db,
+        { epgText: empty },
+        options({ minTextChars: 0 }),
+      );
+
+      assert.equal(outcome.ok, true);
+
+      // The text without anything to say.
+      const text = h.db.get<{ text_hash: string; embed_text: string | null; embed_hash: string | null }>(
+        `SELECT text_hash, embed_text, embed_hash
+           FROM program_texts WHERE description IS NULL`,
+      );
+      assert.ok(text);
+      assert.equal(text.embed_text, '');
+
+      // It is not in the queue: its vector would be the vector of every
+      // other text without anything.
+      const queued = h.db.get<{ found: number }>(
+        'SELECT count(*) AS found FROM vector_queue WHERE embed_hash = ?',
+        text.embed_hash ?? '',
+      );
+      assert.equal(queued?.found, 0);
     } finally {
       h.cleanup();
     }

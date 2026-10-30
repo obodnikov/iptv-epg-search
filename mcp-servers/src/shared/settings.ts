@@ -84,6 +84,14 @@ export interface SettingsSpec {
    * secret (the name of the variable that holds the key, for example).
    */
   patterns?: Record<string, { pattern: RegExp; what: string }>;
+  /**
+   * Paths (dot separated) with a check of their own.
+   *
+   * The check gets the value and answers the problem, or null when the
+   * value is fine. It is used for the values that a pattern cannot hold:
+   * the offset "+0300" has the right form, but "+9999" is not an offset.
+   */
+  checks?: Record<string, (value: string) => string | null>;
 }
 
 export interface SettingsLoad {
@@ -117,6 +125,7 @@ function mergeValue(
   enums: Map<string, string[]>,
   ranges: Map<string, { min?: number; max?: number }>,
   patterns: Map<string, { pattern: RegExp; what: string }>,
+  checks: Map<string, (value: string) => string | null>,
 ): unknown {
   if (raw === undefined) return base;
 
@@ -160,6 +169,7 @@ function mergeValue(
             enums,
             ranges,
             patterns,
+            checks,
           );
       if (out[key] === undefined) delete out[key];
     }
@@ -221,6 +231,14 @@ function mergeValue(
       issues.push(`"${path}" is not ${rule.what}`);
       return base;
     }
+    const check = checks.get(path);
+    if (check) {
+      const problem = check(raw);
+      if (problem !== null) {
+        issues.push(`"${path}" ${problem}`);
+        return base;
+      }
+    }
     return raw;
   }
 
@@ -240,6 +258,7 @@ export function mergeSettings(
   const enums = new Map(Object.entries(spec.enums ?? {}));
   const ranges = new Map(Object.entries(spec.ranges ?? {}));
   const patterns = new Map(Object.entries(spec.patterns ?? {}));
+  const checks = new Map(Object.entries(spec.checks ?? {}));
 
   // The template is copied first: the caller must never be able to change
   // the template of the server by changing the settings it got.
@@ -260,6 +279,7 @@ export function mergeSettings(
     enums,
     ranges,
     patterns,
+    checks,
   ) as Record<string, unknown>;
 
   // URL fields are checked after the merge, so a bad URL never lands in the

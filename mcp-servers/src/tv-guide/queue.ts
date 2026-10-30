@@ -6,6 +6,11 @@
  * the guide looks its texts up in `program_texts`, and a text is "live"
  * while at least one programme in the guide carries it.
  *
+ * The queue is keyed by the hash of the **embedding text**, not by the
+ * hash of the source pair: the vector of a text is stored under that
+ * hash, and a text whose embedding text changed (phase T2 added the facts
+ * of the text to it) is a different vector.
+ *
  * The queue holds the work of the **active** model only: the vectors of
  * two models are never compared (design: iptv-mcp-servers.md §6.2). It is
  * filled by the import (tv-guide-server.md §5 step 8), it is pruned when
@@ -21,8 +26,8 @@ import type { WriteOptions } from './import-options.ts';
  * One text of the queue.
  */
 export interface QueuedText {
-  /** The hash of the source pair (title, description). */
-  textHash: string;
+  /** The hash of the embedding text: the key of the vector. */
+  embedHash: string;
   /** The text that has to be embedded. */
   text: string;
 }
@@ -31,9 +36,9 @@ export interface QueuedText {
  * The next texts of the queue of a model.
  *
  * The text comes from `program_texts`: the queue holds the hash of the
- * text, not the text itself. The join with `programmes` skips the texts
- * that no programme carries any more, and two programmes that share a
- * text are one row.
+ * embedding text, not the text itself. The join with `programmes` skips
+ * the texts that no programme carries any more, and two programmes that
+ * share a text are one row.
  *
  * @param model The model the texts have to be embedded for.
  * @param minTextChars Texts shorter than this are only searched by words.
@@ -45,11 +50,11 @@ export function nextQueuedTexts(
   minTextChars: number,
   limit: number,
 ): QueuedText[] {
-  const rows = db.all<{ text_hash: string; text: string }>(
-    `SELECT DISTINCT q.text_hash AS text_hash, t.embed_text AS text
+  const rows = db.all<{ embed_hash: string; text: string }>(
+    `SELECT DISTINCT q.embed_hash AS embed_hash, t.embed_text AS text
        FROM vector_queue q
-       JOIN program_texts t ON t.text_hash = q.text_hash
-       JOIN programmes p ON p.text_hash = q.text_hash
+       JOIN program_texts t ON t.embed_hash = q.embed_hash
+       JOIN programmes p ON p.text_hash = t.text_hash
       WHERE q.model = ?
         AND t.embed_text != ''
         AND length(t.embed_text) >= ?
@@ -59,19 +64,19 @@ export function nextQueuedTexts(
     limit,
   );
 
-  return rows.map((row) => ({ textHash: row.text_hash, text: row.text }));
+  return rows.map((row) => ({ embedHash: row.embed_hash, text: row.text }));
 }
 
 /**
  * Remove the texts of the queue that were embedded.
  *
- * @returns the number of the rows that were removed.
+ * @returns The number of the rows that were removed.
  */
 export function removeQueuedTexts(db: Db, model: string, hashes: string[]): number {
   if (hashes.length === 0) return 0;
   const marks = hashes.map(() => '?').join(', ');
   return db.run(
-    `DELETE FROM vector_queue WHERE model = ? AND text_hash IN (${marks})`,
+    `DELETE FROM vector_queue WHERE model = ? AND embed_hash IN (${marks})`,
     model,
     ...hashes,
   ).changes;
@@ -87,19 +92,27 @@ export function dropForeignQueueRows(db: Db, model: string): number {
 /**
  * Put one text into the queue.
  *
- * A text that is shorter than `embeddings.minTextChars` is only searched by
- * words, so it is never queued.
+ * A text that is shorter than `embeddings.minTextChars` is only searched
+ * by words, so it is never queued. An empty text is never queued either,
+ * even when `minTextChars` is zero: there is nothing to embed, and a
+ * vector of nothing would be the vector of every other empty text.
  *
  * @returns true when a row was added.
  */
-export function queueText(db: Db, textHash: string, embedText: string, options: WriteOptions): boolean {
+export function queueText(
+  db: Db,
+  embedHash: string,
+  embedText: string,
+  options: WriteOptions,
+): boolean {
   if (!options.embeddingsEnabled) return false;
-  if (!textHash) return false;
+  if (!embedHash) return false;
+  if (!embedText) return false;
   if (charLength(embedText) < options.minTextChars) return false;
 
   const outcome = db.run(
-    'INSERT OR IGNORE INTO vector_queue (text_hash, model, queued_at) VALUES (?, ?, ?)',
-    textHash,
+    'INSERT OR IGNORE INTO vector_queue (embed_hash, model, queued_at) VALUES (?, ?, ?)',
+    embedHash,
     options.embeddingModel,
     options.now,
   );
@@ -122,7 +135,12 @@ export function clearVectorQueue(db: Db): number {
 export function pruneVectorQueue(db: Db): number {
   const outcome = db.run(
     `DELETE FROM vector_queue
-      WHERE text_hash NOT IN (SELECT DISTINCT text_hash FROM programmes)`,
+      WHERE embed_hash IS NULL
+         OR embed_hash NOT IN (
+              SELECT DISTINCT t.embed_hash
+                FROM program_texts t
+                JOIN programmes p ON p.text_hash = t.text_hash
+           )`,
   );
   return outcome.changes;
 }
@@ -150,15 +168,16 @@ export function queueMissingVectors(
   if ((table?.found ?? 0) === 0) return 0;
 
   const outcome = db.run(
-    `INSERT OR IGNORE INTO vector_queue (text_hash, model, queued_at)
-     SELECT DISTINCT t.text_hash, ?, ?
+    `INSERT OR IGNORE INTO vector_queue (embed_hash, model, queued_at)
+     SELECT DISTINCT t.embed_hash, ?, ?
        FROM program_texts t
        JOIN programmes p ON p.text_hash = t.text_hash
       WHERE t.embed_text != ''
         AND length(t.embed_text) >= ?
+        AND t.embed_hash IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM vec.vectors v
-           WHERE v.text_hash = t.text_hash AND v.model = ?
+           WHERE v.text_hash = t.embed_hash AND v.model = ?
         )`,
     options.embeddingModel,
     options.now,
@@ -184,12 +203,13 @@ export function rebuildVectorQueue(
 ): number {
   db.run('DELETE FROM vector_queue');
   const outcome = db.run(
-    `INSERT OR IGNORE INTO vector_queue (text_hash, model, queued_at)
-     SELECT DISTINCT t.text_hash, ?, ?
+    `INSERT OR IGNORE INTO vector_queue (embed_hash, model, queued_at)
+     SELECT DISTINCT t.embed_hash, ?, ?
        FROM program_texts t
        JOIN programmes p ON p.text_hash = t.text_hash
       WHERE t.embed_text != ''
-        AND length(t.embed_text) >= ?`,
+        AND length(t.embed_text) >= ?
+        AND t.embed_hash IS NOT NULL`,
     model,
     now,
     minTextChars,
@@ -214,7 +234,7 @@ export function reconcileVectorQueue(db: Db, model: string): number {
   const outcome = db.run(
     `DELETE FROM vector_queue
       WHERE model = ?
-        AND text_hash IN (SELECT text_hash FROM vec.vectors WHERE model = ?)`,
+        AND embed_hash IN (SELECT text_hash FROM vec.vectors WHERE model = ?)`,
     model,
     model,
   );

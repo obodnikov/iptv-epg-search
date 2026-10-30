@@ -28,7 +28,10 @@ import { openDatabase, type Db } from '../src/shared/db.ts';
 import { applyTvGuideSchema } from '../src/tv-guide/schema.ts';
 import { importTvGuideFiles } from '../src/tv-guide/import.ts';
 import { parsePlaylist } from '../src/tv-guide/playlist.ts';
-import type { ImportOptions } from '../src/tv-guide/import-options.ts';
+import { KIND_MARKERS, OTHER_MARKERS } from '../src/tv-guide/kind.ts';
+import { readTvGuideSettings, TV_GUIDE_SETTINGS_SPEC } from '../src/tv-guide/config.ts';
+import { mergeSettings } from '../src/shared/settings.ts';
+import { importOptionsOf, type ImportOptions } from '../src/tv-guide/import-options.ts';
 
 const DEFAULT_PLAYLIST = resolve(process.cwd(), '..', 'tmp', 'playlist.m3u');
 const DEFAULT_EPG = resolve(process.cwd(), '..', 'tmp', '4a27b28d');
@@ -123,6 +126,129 @@ function printPlaylistVariants(): void {
   }
 }
 
+/**
+ * The wildcards of LIKE are not wildcards here.
+ */
+function escapeLike(text: string): string {
+  return text.replace(/[%_\\]/g, (char) => `\\${char}`);
+}
+
+/**
+ * Print what the derived fields of the guide hold.
+ *
+ * The numbers are the ones the design asks for (tv-guide-server.md §10,
+ * phase T2): the distribution of the kinds, the share of the texts with
+ * the countries and the year of the film ending, and the venues that were
+ * found.
+ */
+function printCoverage(db: Db): void {
+  console.log('');
+  console.log('--- the derived fields ---');
+
+  const kinds = db.all<{ kind: string; source: string; found: number }>(
+    `SELECT kind, kind_source AS source, count(*) AS found
+       FROM program_texts
+      GROUP BY kind, kind_source
+      ORDER BY found DESC`,
+  );
+  console.log('kinds:');
+  for (const row of kinds) {
+    console.log(`  ${row.kind.padEnd(16)} ${String(row.found).padStart(7)}  (${row.source})`);
+  }
+
+  const markers = [...Object.keys(KIND_MARKERS), ...OTHER_MARKERS];
+  // The markers are bound, not pasted into the SQL: the table is data.
+  const markerRows = db.all<{ marker: string; found: number }>(
+    `SELECT
+        CASE
+          ${markers.map(() => 'WHEN title LIKE ? ESCAPE \'\\\' THEN ?').join('\n          ')}
+          ELSE '(none)'
+        END AS marker,
+        count(*) AS found
+       FROM program_texts
+      GROUP BY marker
+      ORDER BY found DESC`,
+    ...markers.flatMap((marker) => [`${escapeLike(marker)}%`, marker]),
+  );
+  console.log('markers left in the title:');
+  for (const row of markerRows) {
+    console.log(`  ${row.marker.padEnd(16)} ${String(row.found).padStart(7)}`);
+  }
+
+  const withYear = db.get<{ found: number }>(
+    'SELECT count(*) AS found FROM program_texts WHERE year IS NOT NULL',
+  );
+  const withDirector = db.get<{ found: number }>(
+    'SELECT count(*) AS found FROM program_texts WHERE directors IS NOT NULL',
+  );
+  const withCast = db.get<{ found: number }>(
+    'SELECT count(*) AS found FROM program_texts WHERE cast_names IS NOT NULL',
+  );
+  const withGenres = db.get<{ found: number }>(
+    'SELECT count(*) AS found FROM program_texts WHERE genres IS NOT NULL',
+  );
+  const withCountries = db.get<{ found: number }>(
+    `SELECT count(DISTINCT text_hash) AS found
+       FROM text_countries
+      WHERE code IS NOT NULL`,
+  );
+  const total = db.get<{ found: number }>('SELECT count(*) AS found FROM program_texts')?.found ?? 0;
+  console.log(`texts:                ${total}`);
+  console.log(`  with a year:        ${withYear?.found ?? 0}`);
+  console.log(`  with a director:    ${withDirector?.found ?? 0}`);
+  console.log(`  with a cast:        ${withCast?.found ?? 0}`);
+  console.log(`  with genres:        ${withGenres?.found ?? 0}`);
+  console.log(`  with countries:     ${withCountries?.found ?? 0}`);
+
+  const countries = db.all<{ raw: string; found: number }>(
+    `SELECT raw, count(*) AS found
+       FROM text_countries
+      GROUP BY raw
+      ORDER BY found DESC
+      LIMIT 12`,
+  );
+  console.log('countries:');
+  for (const row of countries) {
+    console.log(`  ${row.raw.padEnd(24)} ${String(row.found).padStart(7)}`);
+  }
+
+  const venues = db.all<{ venue: string; found: number }>(
+    `SELECT venue, count(*) AS found
+       FROM program_texts
+      WHERE venue IS NOT NULL
+      GROUP BY venue
+      ORDER BY found DESC
+      LIMIT 12`,
+  );
+  console.log('venues:');
+  for (const row of venues) {
+    console.log(`  ${row.venue.padEnd(30)} ${String(row.found).padStart(7)}`);
+  }
+
+  const themes = db.all<{ theme: string; region: string; found: number }>(
+    `SELECT COALESCE(theme, '(none)') AS theme, COALESCE(region, '(none)') AS region,
+            count(*) AS found
+       FROM channels
+      GROUP BY theme, region
+      ORDER BY found DESC`,
+  );
+  console.log('channels by theme and region:');
+  for (const row of themes) {
+    console.log(`  ${row.theme.padEnd(14)} ${row.region.padEnd(8)} ${String(row.found).padStart(6)}`);
+  }
+
+  const shifts = db.all<{ timeshift_h: number; found: number }>(
+    `SELECT timeshift_h, count(*) AS found
+       FROM channels
+      GROUP BY timeshift_h
+      ORDER BY timeshift_h`,
+  );
+  console.log('channels by time shift:');
+  for (const row of shifts) {
+    console.log(`  ${String(row.timeshift_h).padStart(2)} h  ${String(row.found).padStart(6)}`);
+  }
+}
+
 function readFileSyncOf(path: string): string {
   return readFileSync(path, 'utf8');
 }
@@ -140,19 +266,39 @@ const ownDataDir = args.dataDir === null;
 const db: Db = openDatabase({ path: join(dataDir, 'data.sqlite') });
 applyTvGuideSchema(db);
 
+/**
+ * The settings of the working folder, when it holds one.
+ *
+ * The overrides of the groups are part of them, and the import needs
+ * them: the theme and the region of a group may be set by hand.
+ */
+function settingsOf(dataDir: string): Record<string, unknown> {
+  const path = join(dataDir, 'settings.json');
+
+  let raw: unknown = {};
+  if (existsSync(path)) {
+    try {
+      raw = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    } catch {
+      raw = {};
+    }
+  }
+
+  // The merge with the template happens always: a file that is not there
+  // means the defaults, not nothing.
+  return mergeSettings(raw, TV_GUIDE_SETTINGS_SPEC).settings;
+}
+
+const settings = readTvGuideSettings(settingsOf(dataDir));
+
 const options: ImportOptions = {
-  epgUrl: '',
-  liveUrl: '',
-  excludeGroups: ['XXX (18+)'],
-  epgDefaultOffset: '+0000',
-  pastDays: args.pastDays ?? 7,
-  embeddingModel: 'BAAI/bge-m3',
-  minTextChars: 40,
-  embeddingsEnabled: true,
-  now: args.now ?? Math.floor(Date.now() / 1000),
-  // The working folder: the import takes the lock of it, so that two
-  // runs of the script never write at once.
-  dataDir,
+  ...importOptionsOf(settings, args.now ?? Math.floor(Date.now() / 1000), {
+    // The working folder: the import takes the lock of it, so that two
+    // runs of the script never write at once.
+    dataDir,
+  }),
+  // The option of the script wins over the setting of the file.
+  ...(args.pastDays === null ? {} : { pastDays: args.pastDays }),
 };
 
 console.log(`playlist: ${args.playlist}`);
@@ -184,6 +330,7 @@ if (outcome.ok) {
   console.log(`import:    ${(durationMs / 1000).toFixed(1)} s`);
   console.log(`peak RSS:  ${mb(peakRss)}`);
   console.log(`data size: ${mb(dirSize(dataDir))}`);
+  printCoverage(db);
 }
 
 db.close();

@@ -16,68 +16,53 @@
  *
  * 1. the programmes of the last import are deleted;
  * 2. the channels of the last import are deleted;
- * 3. the channels of this import are written (playlist merged with guide);
- * 4. the new texts are written, with their keyword-index rows and their
- *    queue rows — before the programmes, whose foreign key points at
- *    them;
+ * 3. the channels of this import are written (playlist merged with
+ *    guide), with the theme, the region, the quality, the time shift and
+ *    the family key;
+ * 4. the new texts are written, with their facts, their keyword-index
+ *    rows and their queue rows — before the programmes, whose foreign key
+ *    points at them;
  * 5. the programme rows are written in one pass, already filtered by the
  *    retention window;
  * 6. the texts that no programme carries any more are removed.
  *
- * The classification columns of `program_texts` arrive with phase T2; the
- * write of T1 fills their neutral values.
+ * The texts that are already in the database are rewritten when the
+ * version of their derivation differs from the one of the code, or when
+ * the kind of the text changed with the channels around it.
+ *
+ * The row of a channel is written in `channel-rows.ts`, the row of a text
+ * in `text-rows.ts`, and the window of the guide in `retention.ts`.
  */
 
 import { type Db, withTransaction } from '../shared/db.ts';
-import { normalizeTitle, stemText } from '../shared/text.ts';
 import {
   clearVectorQueue,
   dropForeignQueueRows,
   pruneVectorQueue,
   queueMissingVectors,
-  queueText,
   reconcileVectorQueue,
 } from './queue.ts';
-import { buildProgrammeText, type ProgrammeText } from './texts.ts';
+import { buildProgrammeText, DERIVED_VERSION, type ProgrammeText } from './texts.ts';
+import { familyKey } from './channel-facts.ts';
+import {
+  GroupFactsCache,
+  isAdultChannel,
+  writeChannelRows,
+  type MergedChannel,
+} from './channel-rows.ts';
+import { insertTextRow, rewriteTextRow, withChannelKind, type KnownText } from './text-rows.ts';
 import { parseEpgTime } from './epg-time.ts';
 import type { EpgProgramme } from './epg.ts';
 import type { PlaylistChannel } from './playlist.ts';
+import type { Theme } from './groups.ts';
 import {
   emptyWriteResult,
   type ImportOptions,
   type WriteResult,
 } from './import-options.ts';
 
-/**
- * Groups and channel names that mark an adult channel.
- *
- * The sample carries the group "XXX (18+)"; the mark of the provider is
- * the "(18+)" (design §2.2). The channels are stored and marked; the
- * filter is a question of the search, not of the import — the same
- * decision the cinema server took in phase C2.
- */
-const ADULT_MARK = /\(18\+\)/i;
-
-/**
- * One channel, ready to be written.
- */
-export interface MergedChannel {
-  channelId: string;
-  /** EPG display-name, else playlist name. */
-  name: string;
-  playlistName: string | null;
-  groupTitle: string | null;
-  streamUrl: string | null;
-  archiveDays: number;
-  catchupType: string | null;
-  logoUrl: string | null;
-  isAdult: boolean;
-  /**
-   * The name, normalised. Phase T2 replaces this placeholder with the
-   * family key without the quality and time-shift marks.
-   */
-  familyKey: string;
-}
+export { isAdultChannel, type MergedChannel } from './channel-rows.ts';
+export { applyRetention, removeOrphanTexts } from './retention.ts';
 
 /**
  * One programme row, ready for the insert.
@@ -110,10 +95,15 @@ export class GuideWriter {
   private keptRows: ProgrammeRow[] = [];
   /** The hashes of the texts that the kept rows carry. */
   private keptTexts = new Set<string>();
+  /** The themes of the channels that carry a text. */
+  private readonly textThemes = new Map<string, Set<Theme>>();
+  /** What the groups of the channels say. */
+  private readonly groups: GroupFactsCache;
 
   constructor(db: Db, options: ImportOptions) {
     this.db = db;
     this.options = options;
+    this.groups = new GroupFactsCache(options);
   }
 
   /**
@@ -135,7 +125,7 @@ export class GuideWriter {
       catchupType: channel.catchupType || headerCatchupType || null,
       logoUrl: channel.logo || existing?.logoUrl || null,
       isAdult: isAdultChannel(channel.group, channel.name),
-      familyKey: normalizeTitle(existing?.name ?? channel.name),
+      familyKey: familyKey(existing?.name ?? channel.name),
     });
   }
 
@@ -153,7 +143,7 @@ export class GuideWriter {
       // name of the playlist stays as `playlist_name` (design §4.1).
       if (name) {
         existing.name = name;
-        existing.familyKey = normalizeTitle(name);
+        existing.familyKey = familyKey(name);
       }
       // The logo of the playlist wins; the icon of the guide is the
       // fallback.
@@ -171,7 +161,7 @@ export class GuideWriter {
       catchupType: null,
       logoUrl: icon || null,
       isAdult: isAdultChannel('', name),
-      familyKey: normalizeTitle(name),
+      familyKey: familyKey(name || id),
     });
   }
 
@@ -234,10 +224,11 @@ export class GuideWriter {
       this.writeChannels();
       this.writeTexts();
       this.writeProgrammes();
-      this.result.removedTexts = removeOrphanTexts(this.db);
+      this.result.removedTexts = this.removeOrphanTexts();
 
       this.result.channels = this.countChannels();
       this.result.texts = this.countTexts();
+      this.result.liveProgrammes = this.countProgrammes();
 
       const window = this.db.get<{ first: number | null; last: number | null }>(
         'SELECT min(start_utc) AS first, max(start_utc) AS last FROM programmes',
@@ -254,10 +245,15 @@ export class GuideWriter {
   /**
    * Split the programme rows into the ones that are written and the ones
    * that are dropped, now that every channel of the guide is known.
+   *
+   * The themes of the channels that carry a text are collected here: the
+   * kind of a text may come from the theme of its channels (design §4.3
+   * source 3).
    */
   private resolveRows(): void {
     this.keptRows = [];
     this.keptTexts = new Set();
+    this.textThemes.clear();
 
     for (const row of this.rows) {
       const channel = this.channels.get(row.channelId);
@@ -275,6 +271,13 @@ export class GuideWriter {
 
       this.keptRows.push(row);
       this.keptTexts.add(row.textHash);
+
+      const theme = this.groups.themeOf(channel.groupTitle);
+      if (theme !== null) {
+        const themes = this.textThemes.get(row.textHash) ?? new Set<Theme>();
+        themes.add(theme);
+        this.textThemes.set(row.textHash, themes);
+      }
     }
   }
 
@@ -282,32 +285,12 @@ export class GuideWriter {
    * Write the channels of the map, with the excluded groups left out.
    */
   private writeChannels(): void {
-    const statement = this.db.statement(
-      `INSERT INTO channels (
-         channel_id, name, playlist_name, group_title, theme, region,
-         timeshift_h, quality, family_key, stream_url, archive_days,
-         catchup_type, logo_url, is_adult
-       ) VALUES (?, ?, ?, ?, NULL, NULL, 0, 1, ?, ?, ?, ?, ?, ?)`,
+    this.result.droppedGroupChannels = writeChannelRows(
+      this.db,
+      this.channels.values(),
+      this.groups,
+      (group) => this.isExcluded(group),
     );
-
-    for (const channel of this.channels.values()) {
-      if (this.isExcluded(channel.groupTitle)) {
-        this.result.droppedGroupChannels += 1;
-        continue;
-      }
-      statement.run(
-        channel.channelId,
-        channel.name,
-        channel.playlistName,
-        channel.groupTitle,
-        channel.familyKey,
-        channel.streamUrl,
-        channel.archiveDays,
-        channel.catchupType,
-        channel.logoUrl,
-        channel.isAdult ? 1 : 0,
-      );
-    }
   }
 
   /**
@@ -323,58 +306,68 @@ export class GuideWriter {
   private excludeGroupSet: Set<string> | null = null;
 
   /**
-   * Write the texts that are new to the guide, with their keyword-index
-   * rows and their queue rows.
+   * Write the texts that are new to the guide, and rewrite the texts
+   * whose derivation or whose kind changed.
    *
    * They are written before the programmes: the programmes table carries
    * a foreign key to them, and the foreign key is checked on every
    * insert.
    */
   private writeTexts(): void {
+    // The texts that are already in the database are read once: the
+    // guide holds a hundred thousand texts, and one query per text would
+    // keep the transaction open for their sake.
+    const known = new Map<string, KnownText>();
+    for (const row of this.db.all<KnownText & { text_hash: string }>(
+      'SELECT text_hash, derived_version, embed_hash, fts_rowid, kind, kind_source FROM program_texts',
+    )) {
+      known.set(row.text_hash, {
+        derived_version: row.derived_version,
+        embed_hash: row.embed_hash,
+        fts_rowid: row.fts_rowid,
+        kind: row.kind,
+        kind_source: row.kind_source,
+      });
+    }
+
     for (const text of this.texts.values()) {
       // A text that no kept programme carries is not written: it belongs
       // to a programme that was dropped (unknown channel, excluded
       // group), and `removeOrphanTexts` would delete it again.
       if (!this.keptTexts.has(text.hash)) continue;
 
-      const outcome = this.db.run(
-        `INSERT INTO program_texts
-           (text_hash, title, title_norm, description, kind, kind_source,
-            live_mark, year, directors, cast_names, genres, sport, venue, embed_text)
-         VALUES (?, ?, ?, ?, 'other', 'none', 0, NULL, NULL, NULL, NULL, NULL, NULL, ?)
-         ON CONFLICT(text_hash) DO NOTHING`,
-        text.hash,
-        text.title,
-        text.titleNorm,
-        text.description || null,
-        text.embedText,
-      );
+      const existing = known.get(text.hash);
+      const final = withChannelKind(text, this.textThemes.get(text.hash));
 
-      // A text whose source pair did not change is already in the table,
-      // and its index row and its vector stay: only the programmes around
-      // it are rebuilt.
-      if (outcome.changes === 0) continue;
-      this.result.newTexts += 1;
+      if (existing === undefined) {
+        const outcome = insertTextRow(this.db, final, this.options);
+        this.result.newTexts += 1;
+        this.result.ftsRows += outcome.ftsRows;
+        this.result.unknownCountries += outcome.unknownCountries;
+        continue;
+      }
 
-      // The keyword index (design: iptv-mcp-servers.md §6.3): the text is
-      // stemmed before it goes into the index, because FTS5 has no
-      // Russian stemmer. The people column arrives with phase T2.
-      const fts = this.db.run(
-        `INSERT INTO program_texts_fts (text_hash, title, people, description)
-         VALUES (?, ?, ?, ?)`,
-        text.hash,
-        stemTitle(text.titleNorm),
-        '',
-        stemTitle(text.description || ''),
-      );
-      // A RETURNING rowid on an FTS5 table answers -1; the rowid of the
-      // insert comes from lastInsertRowid instead.
-      const rowid = Number(fts.lastInsertRowid) || null;
+      if (existing.derived_version !== DERIVED_VERSION) {
+        const outcome = rewriteTextRow(this.db, final, existing, this.options);
+        this.result.derivedTexts += 1;
+        this.result.ftsRows += outcome.ftsRows;
+        this.result.unknownCountries += outcome.unknownCountries;
+        continue;
+      }
 
-      this.db.run('UPDATE program_texts SET fts_rowid = ? WHERE text_hash = ?', rowid, text.hash);
+      // The kind of a text may come from the theme of its channels, and
+      // the channels of a text change: the guide moves, the channels are
+      // replaced. The text is written again when its kind changed.
+      if (final.kind !== existing.kind || final.kindSource !== existing.kind_source) {
+        const outcome = rewriteTextRow(this.db, final, existing, this.options);
+        this.result.derivedTexts += 1;
+        this.result.ftsRows += outcome.ftsRows;
+        continue;
+      }
 
-      queueText(this.db, text.hash, text.embedText, this.options);
-      this.result.ftsRows += 1;
+      // A text whose source pair did not change, whose derivation is the
+      // same and whose kind is the same: its facts, its index row and its
+      // vector stay.
     }
   }
 
@@ -426,6 +419,23 @@ export class GuideWriter {
       this.db.get<{ found: number }>('SELECT count(*) AS found FROM vector_queue')?.found ?? 0;
   }
 
+  /**
+   * Remove the texts that no programme carries any more.
+   */
+  private removeOrphanTexts(): number {
+    this.db.run(
+      `DELETE FROM program_texts_fts
+        WHERE rowid IN (
+          SELECT fts_rowid FROM program_texts
+           WHERE text_hash NOT IN (SELECT DISTINCT text_hash FROM programmes)
+             AND fts_rowid IS NOT NULL
+        )`,
+    );
+    return this.db.run(
+      'DELETE FROM program_texts WHERE text_hash NOT IN (SELECT DISTINCT text_hash FROM programmes)',
+    ).changes;
+  }
+
   private countChannels(): number {
     return this.db.get<{ found: number }>('SELECT count(*) AS found FROM channels')?.found ?? 0;
   }
@@ -433,91 +443,8 @@ export class GuideWriter {
   private countTexts(): number {
     return this.db.get<{ found: number }>('SELECT count(*) AS found FROM program_texts')?.found ?? 0;
   }
-}
 
-/**
- * True when a group or a name marks an adult channel.
- */
-export function isAdultChannel(group: string | null, name: string): boolean {
-  return ADULT_MARK.test(group ?? '') || ADULT_MARK.test(name);
-}
-
-/**
- * The stem of a text for the keyword index.
- */
-function stemTitle(text: string): string {
-  return stemText(text);
-}
-
-/**
- * Remove the texts that no programme carries any more, with their
- * keyword-index rows (the vectors stay in their own file, and the queue
- * rows are pruned by the caller).
- *
- * @returns the number of the texts that were removed.
- */
-function removeOrphanTexts(db: Db): number {
-  // Both statements are set-based: a guide can leave tens of thousands of
-  // orphan texts behind, and one statement per text would keep the
-  // transaction open for their sake.
-  db.run(
-    `DELETE FROM program_texts_fts
-      WHERE rowid IN (
-        SELECT fts_rowid FROM program_texts
-         WHERE text_hash NOT IN (SELECT DISTINCT text_hash FROM programmes)
-           AND fts_rowid IS NOT NULL
-      )`,
-  );
-  const outcome = db.run(
-    `DELETE FROM program_texts
-      WHERE text_hash NOT IN (SELECT DISTINCT text_hash FROM programmes)`,
-  );
-  return outcome.changes;
-}
-
-/**
- * Apply the retention window to the guide that is in the database.
- *
- * A refresh whose downloads did not change writes no new guide, but the
- * window of `pastDays` still moves with the day: the programmes that have
- * fallen out of it are removed here, with the texts that only they
- * carried. Everything runs in one synchronous transaction, like the write
- * of an import.
- *
- * @returns what the retention did, for the outcome of the refresh.
- */
-export function applyRetention(db: Db, options: ImportOptions): WriteResult {
-  const result = emptyWriteResult();
-
-  withTransaction(db, () => {
-    const retentionFloor = options.now - options.pastDays * 86_400;
-    result.droppedOld = db.run(
-      'DELETE FROM programmes WHERE stop_utc < ?',
-      retentionFloor,
-    ).changes;
-    result.removedTexts = removeOrphanTexts(db);
-
-    result.channels = db.get<{ found: number }>('SELECT count(*) AS found FROM channels')?.found ?? 0;
-    result.texts = db.get<{ found: number }>('SELECT count(*) AS found FROM program_texts')?.found ?? 0;
-
-    const window = db.get<{ first: number | null; last: number | null }>(
-      'SELECT min(start_utc) AS first, max(start_utc) AS last FROM programmes',
-    );
-    result.windowStart = window?.first ?? null;
-    result.windowEnd = window?.last ?? null;
-
-    if (options.embeddingsEnabled) {
-      dropForeignQueueRows(db, options.embeddingModel);
-      result.queuePruned += pruneVectorQueue(db);
-      queueMissingVectors(db, options);
-      reconcileVectorQueue(db, options.embeddingModel);
-      result.queueSize =
-        db.get<{ found: number }>('SELECT count(*) AS found FROM vector_queue')?.found ?? 0;
-    } else {
-      result.queuePruned += clearVectorQueue(db);
-      result.queueSize = 0;
-    }
-  });
-
-  return result;
+  private countProgrammes(): number {
+    return this.db.get<{ found: number }>('SELECT count(*) AS found FROM programmes')?.found ?? 0;
+  }
 }

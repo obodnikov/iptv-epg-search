@@ -189,7 +189,20 @@ export class EpgReader {
 
   /** Feed one chunk of XML text. */
   write(chunk: string): void {
+    // A broken document is not read any further: the rest of the file
+    // would only produce noise, and the guide that comes after the break
+    // is not trustworthy.
+    if (this.parseError !== null) return;
     this.parser.write(chunk);
+  }
+
+  /**
+   * True when the document was broken.
+   *
+   * The reader of a stream stops reading the file when this is true.
+   */
+  get failed(): boolean {
+    return this.parseError !== null;
   }
 
   /**
@@ -211,6 +224,9 @@ export class EpgReader {
     attributes: unknown;
     isSelfClosing: boolean;
   }): void {
+    // Nothing is read out of a document that is already broken.
+    if (this.parseError !== null) return;
+
     const name = element.name;
     const attributes = element.attributes as Record<string, string>;
 
@@ -258,6 +274,9 @@ export class EpgReader {
   }
 
   private onClose(element: { name: string }): void {
+    // Nothing is read out of a document that is already broken.
+    if (this.parseError !== null) return;
+
     const name = element.name;
 
     if (this.capture !== null && name === this.capture) {
@@ -305,9 +324,11 @@ export async function streamEpg(textStream: Readable, handlers: EpgHandlers): Pr
       firstChunk = false;
       // A byte order mark is allowed (design §9 content check).
       reader.write(stripBom(text));
-      continue;
+    } else {
+      reader.write(text);
     }
-    reader.write(text);
+    // The document is broken: the file is not read any further.
+    if (reader.failed) break;
   }
 
   return reader.close();

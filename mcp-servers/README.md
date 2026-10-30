@@ -21,7 +21,9 @@ working folder. The design is in [`docs/design/`](docs/design/):
 | C3 | MCP server and tools (words only) | done (2026-10-27) |
 | C4 | Embeddings and search by meaning | done (2026-10-27) |
 | C5 | Pilot connection and manual checks | in progress (2026-10-28) |
-| T1–T6 | TV Guide server | not started |
+| T1 | TV Guide: playlist and streaming EPG import | done (2026-10-28) |
+| T2 | TV Guide: derived fields (kinds, facts, channels) | done (2026-10-30) |
+| T3–T6 | TV Guide: tools, search by meaning, Pilot | not started |
 
 The Cinema server runs: `npm run cinema` starts it and speaks MCP over stdio. It serves seven
 tools — `search_titles`, `find_similar_titles`, `get_title`, `list_episodes`, `list_facets`,
@@ -30,7 +32,9 @@ needs the vectors of the catalogue, which the embedding worker builds in the bac
 Without them the search falls back to the words alone, and the answers say so
 (`search_mode: "words"`).
 
-The `tv-guide` script still says that it arrives in phase T1.
+The `tv-guide` script still says that the server arrives in phase T3, with its tools. The
+import of the guide is already there: `npm run import-tv-real-data` imports a real
+playlist and a real guide and prints what they cost and what the derived fields hold.
 
 The dependencies of the servers are already pinned, even though the code that uses them
 arrives later (`@modelcontextprotocol/server` in C3, `sqlite-vec` in C2 and C4). They are
@@ -129,6 +133,26 @@ mcp-servers/
       tools.ts          the registration of the seven tools
       server.ts         the entry point: node src/cinema/server.ts --data-dir …
     tv-guide/           (from T1 on)
+      config.ts         the settings of the TV Guide server
+      schema.ts         the tables of the guide
+      import.ts         the door of the import: the lock and the answers
+      import-core.ts    the parse of a guide and its write
+      import-options.ts the types of the import
+      refresh-pipeline.ts the downloads of a refresh and their import
+      lock.ts           the lock of the working folder, for the import
+      retention.ts      the window of the guide and the texts that left
+      store.ts          the writer of one guide
+      channel-rows.ts   the row of a channel and its derived fields
+      text-rows.ts      the row of a text, its index row and its countries
+      channel-facts.ts  the quality, the time shift and the family key of a name
+      groups.ts         the theme and the region of a group
+      kind.ts           the kind of a programme and the sources of it
+      extract.ts        the film ending, the venue and the sport
+      texts.ts          the derived text of a programme and its hashes
+      queue.ts          the queue of the texts that have to be embedded
+      playlist.ts       the live playlist
+      epg.ts            the streaming reader of the XMLTV guide
+      epg-time.ts       the times of the guide with their offsets
   tests/
     fixtures/           small hand-made excerpts; no real hosts or keys
     shared/ cinema/ tv-guide/
