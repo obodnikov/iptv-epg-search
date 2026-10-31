@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="example EPG">
+<channel id="pervyj">
+    <display-name lang="ru">Первый канал</display-name>
+</channel>
+<channel id="pervyj-2">
+    <display-name lang="ru">Первый канал (+2)</display-name>
+</channel>
+<channel id="pervyj-hd">
+    <display-name lang="ru">Первый канал HD</display-name>
+</channel>
+<channel id="sport">
+    <display-name lang="ru">Спорт канал</display-name>
+</channel>
+<channel id="kino">
+    <display-name lang="ru">Канал без архива</display-name>
+</channel>
+<channel id="xxx">
+    <display-name lang="ru">Взрослый канал</display-name>
+</channel>
+<programme start="20260613120000 +0300" stop="20260613130000 +0300" channel="pervyj">
+    <title lang="ru">Вчера в городе</title>
+    <desc lang="ru">Выпуск позавчерашнего дня о событиях города.</desc>
+</programme>
+<programme start="20260614110000 +0300" stop="20260614112000 +0300" channel="pervyj">
+    <title lang="ru">Вести</title>
+    <desc lang="ru">Главная новость дня и разговор с гостем в студии.</desc>
+</programme>
+<programme start="20260614120000 +0300" stop="20260614122000 +0300" channel="pervyj">
+    <title lang="ru">Вести</title>
+    <desc lang="ru">Главная новость дня и разговор с гостем в студии.</desc>
+</programme>
+<programme start="20260614130000 +0300" stop="20260614143000 +0300" channel="pervyj">
+    <title lang="ru">х/ф Бык</title>
+    <desc lang="ru">Драма о трудовых буднях. Реж.: Борис Хлебников. В ролях: Александр Яценко. Россия, 2019, драма</desc>
+</programme>
+<programme start="20260614130000 +0300" stop="20260614143000 +0300" channel="pervyj-hd">
+    <title lang="ru">х/ф Бык</title>
+    <desc lang="ru">Драма о трудовых буднях. Реж.: Борис Хлебников. В ролях: Александр Яценко. Россия, 2019, драма</desc>
+</programme>
+<programme start="20260614150000 +0300" stop="20260614163000 +0300" channel="pervyj-2">
+    <title lang="ru">х/ф Бык</title>
+    <desc lang="ru">Драма о трудовых буднях. Реж.: Борис Хлебников. В ролях: Александр Яценко. Россия, 2019, драма</desc>
+</programme>
+<programme start="20260614140000 +0300" stop="20260614160000 +0300" channel="sport">
+    <title lang="ru">Футбол. ЧМ-2026. Нидерланды – Швеция. Трансляция из США</title>
+    <desc lang="ru">Прямая трансляция из США.</desc>
+</programme>
+<programme start="20260614200000 +0300" stop="20260614220000 +0300" channel="sport">
+    <title lang="ru">Футбол. ЧМ-2026. Нидерланды – Швеция. Трансляция из США</title>
+    <desc lang="ru">Прямая трансляция из США.</desc>
+</programme>
+<programme start="20260614150000 +0300" stop="20260614193000 +0300" channel="pervyj">
+    <title lang="ru">Собери Россию</title>
+    <desc lang="ru">Марафон о путешествиях по стране.</desc>
+</programme>
+<programme start="20260614184500 +0300" stop="20260614201500 +0300" channel="pervyj">
+    <title lang="ru">х/ф Вечерняя сказка</title>
+    <desc lang="ru">Мюзикл о вечере в городе. Россия, 2018, мюзикл</desc>
+</programme>
+<programme start="20260614120000 +0300" stop="20260614122000 +0300" channel="kino">
+    <title lang="ru">Вести</title>
+    <desc lang="ru">Главная новость дня и разговор с гостем в студии.</desc>
+</programme>
+<programme start="20260614070000 +0300" stop="20260614083000 +0300" channel="kino">
+    <title lang="ru">х/ф Утренний сеанс</title>
+    <desc lang="ru">Комедия о начале дня. Франция, 2020, комедия</desc>
+</programme>
+<programme start="20260614130000 +0300" stop="20260614140000 +0300" channel="xxx">
+    <title lang="ru">Ночной сеанс</title>
+    <desc lang="ru">Программа для взрослых.</desc>
+</programme>
+</tv>

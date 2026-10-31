@@ -1,7 +1,8 @@
 # TV Guide MCP Server — Design & Implementation Plan
 
-**Status:** In progress. Second server, after Cinema. **T1 (import) and T2 (derived fields)
-are done (2026-10-30)**; the tools (T3) and the search by meaning (T4) follow.
+**Status:** In progress. Second server, after Cinema. **T1 (import), T2 (derived fields)
+and T3 (the tools, on the words alone) are done (2026-10-31)**; the search by meaning (T4)
+follows.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -376,7 +377,9 @@ Measure in T1 and record here: import time, peak memory, `data.sqlite` size.
   (plan §5.1). The rule is ported from
   [results.js:268-297](../../../public/scripts/components/results.js#L268-L297):
   - conditions: `archive_days > 0`; the stream URL passes the check; start and stop epochs
-    are valid; `stop_utc < now`; `now − start_utc ≤ archive_days · 86400`;
+    are valid; `stop_utc <= now` (the programme ends at its stop second — the line that
+    `statusOf` draws, so that a status of `past` never meets the refusal "has not ended
+    yet"; amended in T3); `now − start_utc ≤ archive_days · 86400`;
   - URL: parse `stream_url` with the URL API, set `utc=<start_utc>` and `lutc=<now>` as query
     parameters (existing ones are kept), then check the result again;
   - no stop time is sent: the external player rolls on into the next programme (plan §3.2).
@@ -949,15 +952,139 @@ Cinema phases ([cinema-server.md](cinema-server.md) §9).
   the phase ends with `npm run typecheck` and `npm test` green (611 tests). The next
   phase should open with one more round of the review.
 
-**T3 — Tools, words only.**
-- All eight tools; periods; `hide_repeats` / `prefer_hd`; catch-up rule; instructions.
-- Tests:
-  - the catch-up rule with a fixed clock: boundaries at `stop_utc = now` and at exactly
-    `archive_days` days; an existing query on the stream URL; a non-http stream URL;
-  - periods around midnight, and with `timezone` different from the EPG offset (e.g.
-    `Europe/Berlin` against `+0300`; the web app shows this skew, ARCHITECTURE.md §7 "Program
-    Status");
-  - contract tests as in Cinema C3, including the Pilot name rule.
+**T3 — Tools, words only.** *(done 2026-10-31)*
+- What was built:
+  - `src/tv-guide/server.ts` — the entry point (the steps of
+    [iptv-mcp-servers.md](iptv-mcp-servers.md) §4.2: settings, schema,
+    tools, stdio, the refresh at the start); the `tv-guide` npm script
+    runs it;
+  - `periods.ts` — the periods of §7 and the wall-clock maths
+    (`wallClockToEpoch` corrects with the offset of the zone at the
+    moment, twice, for the daylight-saving edge); `statusOf`;
+  - `guide-links.ts` — the port of the catch-up rule
+    (`results.js:250-297`) with the refusal reasons, and Watch Live;
+  - `queries.ts` — the reader: counts, window, channels (resolved in
+    JavaScript: SQLite's `lower()` does not fold Cyrillic), group
+    summary, channel list, now-and-next, schedule, airings of a title,
+    the countries of texts;
+  - `words.ts` and `search.ts` — the FTS expression and the words-only
+    search of [iptv-mcp-servers.md](iptv-mcp-servers.md) §7.1 step 1–5
+    without the meaning; `handler-search.ts`, `handlers.ts`,
+    `handler-status.ts`, `tools.ts`, `schemas.ts`, `descriptions.ts`,
+    `items.ts`, `render.ts`, `tool-context.ts`, `refresh.ts`,
+    `status.ts` — the eight tools, their contracts and their answers.
+- Decisions the design left open, taken in T3:
+  - **`keywords` are alternatives, not requirements** (§7.2): they join
+    the query with OR (the "plus" of [iptv-mcp-servers.md](iptv-mcp-servers.md)
+    §7.1 step 2). The model adds venues it only suspects — a text that
+    answers the query alone must not be lost; bm25 ranks the text that
+    matches more of them higher. The `person` stays a requirement
+    (AND, over the people and the description), as in the cinema.
+  - **the cursor carries the moment of the search.** A page is read
+    minutes after the first call, and the window, the collapse and the
+    statuses all move with the moment; the cursor is base64url of
+    `{offset, signature, now}` and the whole search keeps the moment it
+    started with.
+  - **`time` sorts up for future windows and down for past ones**: the
+    catch-up of yesterday evening is read the other way round than the
+    programme of this evening.
+  - **`search_mode` is `words` or `filters`** in T3; `words+meaning`
+    arrives with T4.
+  - **the tools take their moment from the context** (`ctx.now()`): the
+    wall clock in the server, a frozen moment in the tests — the same
+    seam the import has as `ImportOptions.now`. The guide is
+    now-centric, and the fixtures of the tests live in June 2026.
+  - the collapse of the repeats is written as **window functions in SQL**
+    (`prefer_hd` partitions by title and moment, `hide_repeats` by title
+    and family, nearest to now), not as a pass over JavaScript rows: a
+    search without filters sees the whole guide, and the collapse has to
+    run before the page is cut for `total` to be right.
+  - `get_channel_schedule` without a date reads the **local day of now**;
+    a `from`/`to` without an offset is a wall clock of the configured
+    zone, with an offset it is absolute.
+  - the answers carry the counts and the window that `WriteResult` of the
+    last import wrote into `meta` (`epgUrlSource`, `defaultOffsetTimes`,
+    `windowStart`/`windowEnd` were already there); nothing new is counted
+    at read time that the import can count once.
+- Tests (`tests/tv-guide/`): the periods around midnight and with
+  `Europe/Berlin` against the `+0300` offset of the fixtures; the
+  catch-up rule with a fixed clock (the boundaries at `stop_utc = now`
+  and at exactly `archive_days` days, the query parameters a stream URL
+  already has, a non-http and a broken stream URL); the search through
+  the tools (the collapse, the periods, kinds, countries, regions,
+  channels, `only_catchup`, the adult filter, both orders, the cursor and
+  its mismatch); the details (the facts of a film, the catch-up link with
+  `utc`/`lutc`, the refusals, the adult refusal, the other airings);
+  `find_airings` around now; now-and-next with and without the
+  time-shifted channels; the schedule of a day and of a window, paged;
+  `list_channels` in both modes; `get_status`; the Pilot name rule. The
+  harness lists the tools before calling them, so that every structured
+  answer is validated against the output schema the tool declared — that
+  is how the smoke test over real stdio caught the one field the schema
+  did not name.
+- **Measured on the real files** (`tmp/playlist.m3u` + `tmp/4a27b28d`,
+  the June 2026 snapshot; 316,746 programmes, 100,611 texts, imported in
+  16.8–18.3 s; the searches run in the middle of the guide window;
+  `npm run check-tv-search`, after the review fixes):
+
+  | Search | Results | Time |
+  | --- | --- | --- |
+  | `kinds=[film] period=tonight` | 178 | 29 ms |
+  | `kinds=[film] production_countries=[FR] period=next_7d` | 132 | 15 ms |
+  | `query=биатлон keywords=[Эстерсунд,Швеция]` | 10 | 9 ms |
+  | `keywords=[Швеция] kinds=[sport]` | 9 | 9 ms |
+  | `channel_regions=[DE] period=tonight` | 325 | 21 ms |
+  | `query=космос period=next_7d` | 145 | 13 ms |
+  | `channel_themes=[film] period=next_7d` without the collapse | 12,547 | 162 ms |
+  | no filters at all (every upcoming programme, collapsed) | 48,488 | 907 ms |
+  | `query=фильм` (wide word match) | 492 | 20 ms |
+  | `find_airings title=Бык` | 7 | 9 ms |
+  | `get_channel_schedule channel="Матч ТВ HD"` (a day) | 35 | 12 ms |
+  | `get_now_and_next themes=[sport]` | 64 | 14 ms |
+  | `get_now_and_next` (every channel) | 1,177 | 58 ms |
+
+  Every realistic search is far under the target of
+  [iptv-mcp-servers.md](iptv-mcp-servers.md) §7.4 (300 ms). The one shape
+  over it is the search without a query and without a filter: the
+  collapse runs over the whole upcoming guide (~190,000 programmes) once,
+  with the count taken in the same pass (`count(*) OVER ()`). It is
+  legal (§7.1: the filter result without words) but rare — the model is
+  told to use `get_now_and_next` for "what is on"; it is recorded, not
+  fixed. T4, which adds a vector pass over the candidates, may want to
+  keep such a search on the words alone.
+- The review of the phase (2026-10-31, the review-fix loop, two rounds) approved in the
+  second round. The first round found one blocking and four middle issues, all fixed:
+  - **the adult filter is a read filter everywhere**: `find_airings` and the other
+    airings of `get_program` drop the airings of adult channels, `get_channel_schedule`
+    refuses an adult channel, and the group summary of `list_channels` does not name the
+    adult group — times, titles and channel names are content (the checklist of
+    [iptv-mcp-servers.md](iptv-mcp-servers.md) §11);
+  - `resolveTitleNorm` normalises the request the way the import normalised the titles:
+    the exact match hit almost never before, and everything leaned on the FTS fallback;
+  - `tonight` takes its evening hour from the wall clock of the zone (a fixed 3600 · N
+    seconds drifts on a 23h or 25h day) and keeps a programme that is on air when its
+    start lies after the evening hour: the film of 18:45 stays in at 19:00, the marathon
+    of the afternoon does not (`onAirFrom`);
+  - the catch-up mark of the `find_airings` text is computed by `catchupPossible`, the
+    same function as the structured flag, so that the text cannot contradict the payload;
+  - the programmes of an answer are fetched in one batched query (`programRowsForPairs`,
+    row-value `IN (VALUES …)`) instead of one query per row, and the join of
+    `get_now_and_next` only sees the programmes around the moment.
+  The second round found no blockers; its advisories were fixed too:
+  - **one line between live and ended**: `statusOf`, `catchupPossible`,
+    `catchupRefusal` and the `only_catchup` SQL all treat the stop second as the last
+    second of the programme (§6);
+  - `get_channel_schedule` refuses a one-sided `from`/`to` pair instead of guessing the
+    missing bound (a `to` alone would have pulled the whole history of the channel);
+  - every time field of an output schema goes through a formatter that always answers a
+    string, so that a schema validation can never trip over a null;
+  - `prefer_hd` partitions by title, **family and moment**: two different channels that
+    air the same title at the same moment are not copies of one another;
+  - the group summary names a theme and a region only when every channel of the group
+    agrees (Ultra HD answers "mixed");
+  - the quality label lives in one place (`render.ts`); the split of `queries.ts` into
+    `channels-read.ts` left no duplicates.
+- The manual checks of §11 in Pilot belong to T5.
 
 **T4 — Embeddings.**
 - Vectors for texts (all groups, D11).
