@@ -10,7 +10,7 @@
  */
 
 import type { ListItem } from './items.ts';
-import type { SearchMode } from './search.ts';
+import type { SearchMode } from './search-types.ts';
 import type { NowAndNextRow, ProgramRow } from './queries.ts';
 import type { ChannelRow, GroupSummary } from './channels-read.ts';
 import { catchupPossible } from './guide-links.ts';
@@ -49,7 +49,13 @@ export function renderList(
   if (items.length === 0) return 'Nothing found.';
 
   const how =
-    mode === 'words' ? 'word search' : usedWords ? 'word search' : 'filters only';
+    mode === 'words+meaning'
+      ? 'word and meaning search'
+      : mode === 'words'
+        ? 'word search'
+        : usedWords
+          ? 'word search'
+          : 'filters only';
   const head = `${total} programme(s) found (${how}). Showing ${items.length}:`;
   return [head, ...items.map(renderListItem)].join('\n');
 }

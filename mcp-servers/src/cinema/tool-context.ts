@@ -22,7 +22,7 @@ import { errorResult } from '../shared/tool-kit.ts';
 import { readCinemaSettings, type CinemaSettings } from './config.ts';
 import { categoryValues, genreValues, unknownValues, valueNames } from './filters.ts';
 import { type Embedder } from './embedder.ts';
-import { QueryCache } from './query-cache.ts';
+import { QueryCache } from '../shared/query-cache.ts';
 import type { RefreshStart } from './refresh.ts';
 
 /**

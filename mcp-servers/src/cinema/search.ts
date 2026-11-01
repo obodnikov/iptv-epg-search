@@ -25,8 +25,9 @@
  */
 
 import { type Db, withSnapshot } from '../shared/db.ts';
+import { blendScores } from '../shared/blend.ts';
 import { buildFilter, type SortOrder } from './filters.ts';
-import { blendCandidates, collectCandidates } from './blend.ts';
+import { collectCandidates } from './blend.ts';
 import { buildItems, fetchTitleRows } from './items.ts';
 import {
   type MeaningQuery,
@@ -130,7 +131,14 @@ function searchWithMeaning(
     };
   }
 
-  const scores = blendCandidates(candidates, options.meaningWeight ?? 0.7);
+  const scores = blendScores(
+    candidates.map((candidate) => ({
+      key: candidate.title_id,
+      words: candidate.words,
+      distance: candidate.distance,
+    })),
+    options.meaningWeight ?? 0.7,
+  );
 
   const scored = candidates.map((candidate) => ({
     title_id: candidate.title_id,

@@ -17,7 +17,8 @@
     "import-real-data": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/import-real-data.ts",
     "embed-real-data": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/embed-real-data.ts",
     "manual-checks": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/manual-checks.ts",
-    "import-tv-real-data": "node scripts/import-tv-real-data.ts"
+    "import-tv-real-data": "node scripts/import-tv-real-data.ts",
+    "measure-tv-meaning": "node --env-file-if-exists=../.env --env-file-if-exists=.env scripts/measure-tv-meaning.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",

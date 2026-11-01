@@ -29,6 +29,7 @@ export async function getStatusTool(ctx: GuideToolContext): Promise<CallToolResu
     model: settings.embeddings.model,
     progress,
     lastError: failure?.error ?? null,
+    embedding: ctx.worker.status(),
   });
 
   const issues = ctx.settings.issues();
@@ -73,9 +74,29 @@ export async function getStatusTool(ctx: GuideToolContext): Promise<CallToolResu
     }
   }
   lines.push(
-    `Vectors: ${report.vectors.done} done, ${report.vectors.pending} pending (model ${report.vectors.model}; the search by meaning arrives with phase T4)`,
+    `Vectors: ${report.vectors.done} done, ${report.vectors.pending} pending (model ${report.vectors.model})`,
   );
   lines.push(`Search mode: ${report.search_mode}`);
+  if (report.embedding.running) {
+    lines.push(
+      `An embedding run is in progress (${report.embedding.done} of ${report.embedding.done + report.embedding.pending} done, ${report.embedding.phase})`,
+    );
+  }
+  if (!report.vectors.meaning && !report.embedding.running) {
+    if (!report.embedding.enabled) {
+      lines.push(
+        'The search by meaning is switched off: set "embeddings"."enabled" to true in the settings file.',
+      );
+    } else if (!report.embedding.available) {
+      lines.push(
+        `The search by meaning needs the key of the embedding service: put it in the environment variable "${settings.embeddings.apiKeyEnv}".`,
+      );
+    } else {
+      lines.push(
+        'The search by meaning is not available yet: the vectors of the guide are still being built.',
+      );
+    }
+  }
   if (report.refresh_running) {
     lines.push(
       `A refresh is running (${report.refresh_running.phase}, ${report.refresh_running.elapsed_ms} ms)`,

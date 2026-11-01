@@ -204,9 +204,9 @@ refresh lock of the working folder) and `permissions.ts` (the rights of the file
 is split: the **lock** is done (C2), the **schedule and the progress** came with the tools
 (C3). `tool-kit.ts` — the shape of the answers and the cursor — is done (C3).
 `embeddings.ts` (the OpenRouter client) and `vectors.ts` (the tables of the vectors database)
-came with C4. The blend of the words and the meaning is in the cinema module
-(`src/cinema/search.ts`); the TV Guide server will need it in `shared/` as well, and the move
-happens with the phase T4, where the first measurement of the TV Guide is made.
+came with C4. The blend of the words and the meaning (`blend.ts`) and the cache of the
+query vectors (`query-cache.ts`) moved to `shared/` in T4, when the TV Guide took the same
+mix; the cinema server imports them from there.
 
 ### 4.4 Movability rule
 

@@ -9,12 +9,8 @@ import { type ListItem } from './items.ts';
 import { type SearchFilters, type SortOrder } from './filters.ts';
 
 /** The meaning of a query: the vector of the query and its model. */
-export interface MeaningQuery {
-  /** The vector of the query. */
-  vector: Float32Array;
-  /** The model the vector was made for. */
-  model: string;
-}
+import { type MeaningQuery } from '../shared/blend.ts';
+export type { MeaningQuery };
 
 /** A search of the catalogue. */
 export interface SearchRequest {

@@ -21,11 +21,14 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { DEFAULT_DATA_DIRS, ensureDataDir, parseArgs } from '../shared/args.ts';
 import { openDatabase, type Db } from '../shared/db.ts';
+import { createOpenRouterEmbedder, type TextEmbedder } from '../shared/embeddings.ts';
 import { Logger } from '../shared/log.ts';
+import { QueryCache } from '../shared/query-cache.ts';
 import { RefreshRunner } from '../shared/refresh.ts';
 import { SettingsStore } from '../shared/settings.ts';
 import { ensureVectorSchema } from '../shared/vectors.ts';
 import { TV_GUIDE_SETTINGS_SPEC, readTvGuideSettings } from './config.ts';
+import { createEmbedder, type Embedder } from './embedder.ts';
 import { createGuideRefresh, shouldRefreshAtStart, type RefreshStart } from './refresh.ts';
 import { applyTvGuideSchema } from './schema.ts';
 import { registerGuideTools } from './tools.ts';
@@ -59,6 +62,7 @@ export const INSTRUCTIONS = [
   "- Times are in the user's time zone. Use `period` for common windows and `from`/`to` for exact ones.",
   '- "When will X be on": `find_airings`. "What is on now": `get_now_and_next`. One channel: `get_channel_schedule`.',
   '- Lists contain no links. `get_program` returns the Watch Live and Catch-up links. Fetch them right before the user wants to watch: a catch-up link depends on the current time.',
+  '- The search by meaning needs the key of the embedding service in the environment. Without it the search falls back to the words and says so (`search_mode`).',
   "- If a Cinema server is also connected, it holds on-demand films. For \"where can I watch X\", ask both.",
 ].join('\n');
 
@@ -72,6 +76,12 @@ export interface TvGuideServerContext {
   runner: RefreshRunner;
   /** Starts a refresh in the background. */
   refresh: (force: boolean) => RefreshStart;
+  /** The client of the embedding service (the meaning of T4). */
+  client: TextEmbedder;
+  /** The vectors of the queries, in the memory and in the database. */
+  queryCache: QueryCache;
+  /** The background worker that embeds the texts of the queue. */
+  worker: Embedder;
   /** The moment the tools answer at: the wall clock. */
   now: () => number;
 }
@@ -152,12 +162,27 @@ export function main(argv: string[]): void {
 
   const runner = new RefreshRunner();
 
+  // The client of the embedding service and the worker that empties the
+  // queue of the texts that have to be embedded.
+  const client = createOpenRouterEmbedder(
+    () => readTvGuideSettings(settings.settings()).embeddings,
+  );
+  const queryCache = new QueryCache(db);
+  const worker = createEmbedder({
+    db,
+    dataDir,
+    settings,
+    logger,
+    embedder: client,
+  });
+
   const refresh = createGuideRefresh({
     db,
     dataDir,
     settings,
     logger,
     runner,
+    worker,
   });
 
   const ctx: TvGuideServerContext = {
@@ -167,6 +192,9 @@ export function main(argv: string[]): void {
     logger,
     runner,
     refresh,
+    client,
+    queryCache,
+    worker,
     now: () => Math.floor(Date.now() / 1000),
   };
 
@@ -179,6 +207,17 @@ export function main(argv: string[]): void {
     refresh(false);
   } else {
     logger.info('no refresh at the start', { reason: decision.reason });
+  }
+
+  // The texts that have to be embedded are embedded in the background: the
+  // tools answer from whatever is in the database.
+  const pending =
+    db.get<{ found: number }>(
+      'SELECT count(*) AS found FROM vector_queue',
+    )?.found ?? 0;
+  if (pending > 0) {
+    const started = worker.start();
+    logger.info('the embedding run was asked for', { pending, status: started });
   }
 
   serveStdio(() => createTvGuideServer(ctx), {

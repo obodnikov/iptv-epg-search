@@ -76,6 +76,8 @@ const SOURCE_STRENGTH: Record<KindSource, number> = {
   none: 0,
 };
 
+export { SOURCE_STRENGTH };
+
 /**
  * Is a source stronger than another one?
  */

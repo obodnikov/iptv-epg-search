@@ -1,14 +1,12 @@
 /**
- * blend.ts - the candidates of a search and the mix of their scores.
+ * blend.ts - the candidates of a search of the catalogue.
  *
- * The side of the search that knows the meaning (design:
- * iptv-mcp-servers.md §7.1 steps 1, 3 and 4):
+ * The mix of the scores lives in the shared module (`src/shared/blend.ts`)
+ * since phase T4, where the guide took the same mix. This module collects
+ * the candidates (design: iptv-mcp-servers.md §7.1 steps 1 and 3):
  *
- * - the candidates: the titles that match the words and the titles that
- *   have a vector;
- * - the distance of every candidate to the query;
- * - the blend: both scores are rescaled to 0-1 inside the candidate set
- *   and mixed.
+ * - the titles that match the words;
+ * - the titles that have a vector, with their distance to the query.
  */
 
 import { type Db } from '../shared/db.ts';
@@ -25,71 +23,6 @@ export interface Candidate {
   words: number | null;
   /** The distance to the query; null when the title has no vector. */
   distance: number | null;
-}
-
-/**
- * The smallest and the biggest value of a list.
- */
-function bounds(values: number[]): { min: number; max: number } | null {
-  if (values.length === 0) return null;
-  let min = values[0] as number;
-  let max = values[0] as number;
-  for (const value of values) {
-    if (value < min) min = value;
-    if (value > max) max = value;
-  }
-  return { min, max };
-}
-
-/**
- * Put a value between 0 and 1.
- *
- * The value that is the best of the set gets 1, the worst gets 0. When all
- * the values are the same, the ones that have a value get 1: there is
- * nothing to compare them with.
- */
-export function rescale(value: number, range: { min: number; max: number } | null): number {
-  if (!range) return 0;
-  if (range.max <= range.min) return 1;
-  return (value - range.min) / (range.max - range.min);
-}
-
-/**
- * The score of every candidate: the blend of the words and the meaning.
- *
- * The bm25 score is negative and the smaller it is, the better the match,
- * so it is turned around. The distance is smaller when the match is better,
- * so it is turned around as well.
- *
- * @param candidates The candidates of the search.
- * @param meaningWeight The weight of the meaning, 0 to 1.
- * @returns the score of every candidate, by title id.
- */
-export function blendCandidates(
-  candidates: Candidate[],
-  meaningWeight: number,
-): Map<string, number> {
-  const weight = Math.min(1, Math.max(0, meaningWeight));
-
-  const wordValues: number[] = [];
-  const distanceValues: number[] = [];
-  for (const candidate of candidates) {
-    if (candidate.words !== null) wordValues.push(-candidate.words);
-    if (candidate.distance !== null) distanceValues.push(-candidate.distance);
-  }
-
-  const wordRange = bounds(wordValues);
-  const distanceRange = bounds(distanceValues);
-
-  const scores = new Map<string, number>();
-  for (const candidate of candidates) {
-    const words = candidate.words === null ? 0 : rescale(-candidate.words, wordRange);
-    const meaning =
-      candidate.distance === null ? 0 : rescale(-candidate.distance, distanceRange);
-    scores.set(candidate.title_id, weight * meaning + (1 - weight) * words);
-  }
-
-  return scores;
 }
 
 /**

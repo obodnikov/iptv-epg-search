@@ -165,7 +165,7 @@ export const listItemSchema = z.object({
 /** The answer of `search_programs`. */
 export const searchProgramsOutput = z.object({
   total: z.number(),
-  search_mode: z.enum(['words', 'filters']),
+  search_mode: z.enum(['words', 'filters', 'words+meaning']),
   window: z.object({
     from: z.string().nullable(),
     to: z.string().nullable(),
@@ -475,10 +475,20 @@ export const getStatusOutput = z.object({
     done: z.number(),
     pending: z.number(),
     model: z.string(),
-    /** Always false in phase T3: the meaning arrives with T4. */
+    /** True when the search by meaning is available right now. */
     meaning: z.boolean(),
   }),
-  search_mode: z.enum(['words']),
+  search_mode: z.enum(['words', 'words+meaning']),
+  embedding: z.object({
+    running: z.boolean(),
+    phase: z.string(),
+    done: z.number(),
+    pending: z.number(),
+    error: z.string().nullable(),
+    enabled: z.boolean(),
+    available: z.boolean(),
+    key_present: z.boolean(),
+  }),
   refresh_running: z
     .object({
       running: z.boolean(),

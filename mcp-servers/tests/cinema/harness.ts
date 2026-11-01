@@ -21,7 +21,7 @@ import { ensureVectorSchema } from '../../src/shared/vectors.ts';
 import { CINEMA_SETTINGS_SPEC, CINEMA_SETTINGS_TEMPLATE } from '../../src/cinema/config.ts';
 import { createEmbedder, type Embedder } from '../../src/cinema/embedder.ts';
 import { importCatalogText, type ImportOptions } from '../../src/cinema/import.ts';
-import { QueryCache } from '../../src/cinema/query-cache.ts';
+import { QueryCache } from '../../src/shared/query-cache.ts';
 import { createCinemaServer } from '../../src/cinema/server.ts';
 import { createCinemaRefresh } from '../../src/cinema/refresh.ts';
 import { applyCinemaSchema } from '../../src/cinema/schema.ts';

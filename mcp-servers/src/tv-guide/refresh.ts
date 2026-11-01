@@ -14,6 +14,7 @@ import { type SettingsStore } from '../shared/settings.ts';
 import { type RefreshRunner } from '../shared/refresh.ts';
 import { sha256 } from '../shared/hash.ts';
 import { readTvGuideSettings, type TvGuideSettings } from './config.ts';
+import { type Embedder } from './embedder.ts';
 import { importOptionsOf } from './import-options.ts';
 import { importSettingsSignature, refreshTvGuide } from './refresh-pipeline.ts';
 import { META_KEYS, writeRefreshState } from './status.ts';
@@ -27,6 +28,8 @@ export interface GuideRefreshContext {
   settings: SettingsStore;
   logger: Logger;
   runner: RefreshRunner;
+  /** The worker of the embeddings; it starts when the import queued texts. */
+  worker: Embedder;
 }
 
 /**
@@ -107,6 +110,16 @@ export function createGuideRefresh(
         duration_ms: outcome.durationMs,
         unchanged: outcome.unchanged,
       });
+
+      // The texts that have to be embedded are embedded in the background:
+      // the tool call never waits for it.
+      const pending =
+        ctx.db.get<{ found: number }>(
+          'SELECT count(*) AS found FROM vector_queue',
+        )?.found ?? 0;
+      if (pending > 0) {
+        ctx.worker.start();
+      }
 
       return outcome;
     });

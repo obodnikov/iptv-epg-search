@@ -11,11 +11,14 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
 import { type Db } from '../shared/db.ts';
+import { type TextEmbedder } from '../shared/embeddings.ts';
 import { type Logger } from '../shared/log.ts';
+import { type QueryCache } from '../shared/query-cache.ts';
 import { type RefreshRunner } from '../shared/refresh.ts';
 import { type SettingsStore } from '../shared/settings.ts';
 import { errorResult } from '../shared/tool-kit.ts';
 import { readTvGuideSettings, type TvGuideSettings } from './config.ts';
+import { type Embedder } from './embedder.ts';
 import { KINDS } from './kind.ts';
 import { THEMES } from './groups.ts';
 import { guideEmpty } from './queries.ts';
@@ -34,6 +37,12 @@ export interface GuideToolContext {
   runner: RefreshRunner;
   /** Starts a refresh in the background. */
   refresh: (force: boolean) => RefreshStart;
+  /** The client of the embedding service (the meaning of T4). */
+  client: TextEmbedder;
+  /** The vectors of the queries, in the memory and in the database. */
+  queryCache: QueryCache;
+  /** The background worker that embeds the texts of the queue. */
+  worker: Embedder;
   /**
    * The moment the tools answer at, in epoch seconds.
    *
@@ -134,4 +143,30 @@ export function adultRefused(
   return errorResult(
     'This programme is on an adult channel. The setting "includeAdult" is off, so its details and its links are not given.',
   );
+}
+
+/**
+ * The vector of a query, out of the cache or from the service.
+ *
+ * The vector is asked of the service once and kept, so that a repeated
+ * search or the next page of a search costs nothing (design:
+ * iptv-mcp-servers.md §7.4). A query without words has no vector, and a
+ * service that does not answer answers null: the search falls back to the
+ * words and says so.
+ */
+export async function embedQuery(
+  ctx: GuideToolContext,
+  text: string,
+  model: string,
+): Promise<Float32Array | null> {
+  if (!text.trim()) return null;
+
+  const cached = ctx.queryCache.get(model, text);
+  if (cached) return cached;
+
+  const vector = await ctx.client.embed(text);
+  if (!vector) return null;
+
+  ctx.queryCache.set(model, text, vector);
+  return vector;
 }

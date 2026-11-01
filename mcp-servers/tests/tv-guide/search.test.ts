@@ -372,4 +372,15 @@ describe('search_programs', () => {
     const sorted = [...names].sort((left, right) => (left < right ? -1 : 1));
     assert.deepEqual(names, sorted);
   });
+
+  it('runs a search without filters at all (the candidate SQL stays valid)', async () => {
+    const h = await harness();
+    // No period, no filters: the whole guide is the candidate set, and
+    // the WHERE clause of the candidate SQL is empty. A dangling WHERE
+    // would be a syntax error (found by the measurement run of T4).
+    const result = await h.call('search_programs', { hide_repeats: false, prefer_hd: false });
+    const data = structured(result);
+    assert.equal(result.isError, undefined);
+    assert.ok((data['total'] as number) > 0);
+  });
 });

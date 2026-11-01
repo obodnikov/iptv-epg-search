@@ -33,7 +33,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { openDatabase, type Db } from '../src/shared/db.ts';
+import {
+  createFakeEmbedder,
+  createOpenRouterEmbedder,
+  type TextEmbedder,
+} from '../src/shared/embeddings.ts';
 import { Logger } from '../src/shared/log.ts';
+import { QueryCache } from '../src/shared/query-cache.ts';
 import { RefreshRunner } from '../src/shared/refresh.ts';
 import { SettingsStore } from '../src/shared/settings.ts';
 import {
@@ -41,6 +47,7 @@ import {
   TV_GUIDE_SETTINGS_SPEC,
   TV_GUIDE_SETTINGS_TEMPLATE,
 } from '../src/tv-guide/config.ts';
+import { createEmbedder } from '../src/tv-guide/embedder.ts';
 import { importTvGuideFiles } from '../src/tv-guide/import.ts';
 import { importOptionsOf } from '../src/tv-guide/import-options.ts';
 import { createGuideRefresh } from '../src/tv-guide/refresh.ts';
@@ -199,13 +206,24 @@ async function main(): Promise<void> {
 
   const logger = new Logger(join(dataDir, 'logs', 'server.log'), 'error');
   const runner = new RefreshRunner();
+  const embedder = embedderForScript(settings);
+  const worker = createEmbedder({
+    db,
+    dataDir,
+    settings,
+    logger,
+    embedder,
+  });
   const ctx: GuideToolContext = {
     db,
     dataDir,
     settings,
     logger,
     runner,
-    refresh: createGuideRefresh({ db, dataDir, settings, logger, runner }),
+    refresh: createGuideRefresh({ db, dataDir, settings, logger, runner, worker }),
+    client: embedder,
+    queryCache: new QueryCache(db),
+    worker,
     now: () => now,
   };
 
@@ -317,6 +335,21 @@ function nowFromEpgHead(epgPath: string): number {
  */
 function writeSettings(path: string, template: Record<string, unknown>): void {
   writeFileSync(path, `${JSON.stringify(template, null, 2)}\n`);
+}
+
+/**
+ * The client of the embedding service for this run.
+ *
+ * The real service when the key is in the environment, so that the search
+ * by meaning runs; a fake otherwise, so that the timings of the words stay
+ * honest.
+ */
+function embedderForScript(settings: SettingsStore): TextEmbedder {
+  const real = createOpenRouterEmbedder(
+    () => readTvGuideSettings(settings.settings()).embeddings,
+  );
+  if (real.available) return real;
+  return createFakeEmbedder({ model: 'fake/model' });
 }
 
 const isDirect = process.argv[1] !== undefined && process.argv[1].endsWith('check-tv-search.ts');

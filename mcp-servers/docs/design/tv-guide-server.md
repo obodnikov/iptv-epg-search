@@ -1,8 +1,8 @@
 # TV Guide MCP Server — Design & Implementation Plan
 
-**Status:** In progress. Second server, after Cinema. **T1 (import), T2 (derived fields)
-and T3 (the tools, on the words alone) are done (2026-10-31)**; the search by meaning (T4)
-follows.
+**Status:** In progress. Second server, after Cinema. **T1 (import), T2 (derived fields),
+T3 (the tools, on the words alone) and T4 (embeddings, with the measurement) are done
+(2026-10-31)**; T5 (Pilot) follows.
 **Date:** 2026-10-25
 **Owner:** @obodnikov
 **Parent document:** [iptv-mcp-servers.md](iptv-mcp-servers.md). Shared decisions D1–D15,
@@ -769,9 +769,13 @@ Cinema phases ([cinema-server.md](cinema-server.md) §9).
     fallback: the same text airs on a sports channel and on a general one, and the theme
     of a channel is a property of an **airing**. The writer gives the theme to the texts
     whose channels agree on it; the search (T3) falls back to the theme of the channel of
-    the airing. The order of the sources: the marker of the provider, then the pattern
-    (the sport, the genre of the description, the film ending), then the theme of the
-    channel, then the meaning (T4);
+    the airing. The order of the sources (the strength of every one stands in the table
+    of §4.3, written down once in `src/tv-guide/kind.ts`): the marker of the provider,
+    then the pattern (the sport, the genre of the description, the film ending), then
+    the meaning (T4), then the theme of the channel, then the film ending with a year;
+    the prose here named the meaning after the channel, the strength table of §4.3 and
+    `kind.ts` put it above — the owner confirmed in T4 that the meaning beats the
+    channel theme;
   - the design names the kind "show" but does not say where it comes from: the **genre**
     of the description names it ("ток-шоу"), and it names the documentaries
     ("документальный") and the animated films ("анимация") as well;
@@ -1086,13 +1090,142 @@ Cinema phases ([cinema-server.md](cinema-server.md) §9).
     `channels-read.ts` left no duplicates.
 - The manual checks of §11 in Pilot belong to T5.
 
-**T4 — Embeddings.**
-- Vectors for texts (all groups, D11).
-- Measure `vec_distance_cosine` over the largest candidate sets. Move to a `vec0` table with
-  metadata columns if it misses the target in [iptv-mcp-servers.md](iptv-mcp-servers.md)
-  §7.4.
-- Kind by meaning (§4.3 step 4) with a tuned threshold.
-- Tests with the fake provider, as in Cinema C4.
+**T4 — Embeddings.** *(done 2026-10-31, with the real-data measurement of the same day)*
+- What was built:
+  - `src/tv-guide/embedder.ts` — the background worker, the shape of the cinema one
+    (`src/cinema/embedder.ts`): its own lock (`embed.lock`), its own progress, the batches
+    repeated with a backoff. It starts at the server start when the queue is not empty and
+    after every successful refresh (the last step of the refresh task, `refresh.ts`).
+  - `src/tv-guide/meaning.ts` — the labels of the kinds (two per kind, in Russian), the
+    JS cosine distance, the pass that gives the texts their meaning kind after every batch
+    of fresh vectors, and the catch-up pass per run over the texts whose vector is there
+    but whose source the last import reset. The label vectors ride in the cache of the
+    query vectors (`query_vectors`): the labels are query-side texts, and the number of
+    the vectors of a model stays the number of the texts of the guide.
+  - `src/tv-guide/candidates.ts` — the candidate SQL of the search, split out of
+    `search.ts`: one builder, two sources — the **words** (the FTS matches with their
+    bm25 score) and the **vectors** (the programmes whose text has a vector for the
+    model, with their `vec_distance_cosine` distance). The collapse of the repeats runs
+    in the same SQL whichever the source: it partitions by title, family and moment and
+    never looks at the score, so the two sides collapse into the same rows and the union
+    is a union of programmes.
+  - `src/tv-guide/search-meaning.ts` — the union of the two sources, the blend in
+    JavaScript, the page cut in JavaScript. The meaning is only used for the order
+    `relevance` and only for a query with words; when no candidate has a vector the
+    search falls back to the words and says so.
+  - `src/tv-guide/search-types.ts` — the shapes of a search, split out of `search.ts` the
+    way the cinema splits them (`search-types.ts`).
+  - `src/shared/blend.ts` — the arithmetic of the blend (`rescale`, `blendScores`), moved
+    out of the cinema module (`src/cinema/blend.ts` keeps the collection of the
+    candidates, which is SQL of the catalogue); `src/shared/query-cache.ts` — the cache
+    of the query vectors, moved the same way. Both servers import them from `shared/`
+    (iptv-mcp-servers.md §4.3).
+  - the wiring: `handler-search.ts` embeds the query through the cache (`embedQuery` in
+    `tool-context.ts`), the model rides in the signature of the search (a page does not
+    mix two models); `get_status` reports the worker (`embedding`) and computes the
+    meaning flag from the vectors in the database, not from the last run — the bug the
+    smoke test of the cinema found (C4); `search_mode` is `words+meaning` when the
+    meaning is available.
+- Decisions the design left open, taken in T4:
+  - **the meaning beats the theme of the channel** (strength 3 against 2, the table of
+    §4.3 and `kind.ts`): a meaning-based kind overwrites a channel-theme kind, and never
+    a kind the provider named itself (the marker) or the pattern named. The prose of the
+    T2 record named the order differently; the owner confirmed the table in T4, and the
+    prose above was corrected;
+  - **the import is the baseline, the meaning is a layer above it**: every import writes
+    its own derivation (so a meaning kind is reset to what the import derives), and the
+    worker's catch-up pass re-applies the meaning kind after the run — the vectors are
+    already in the database, so the re-application asks the service for nothing;
+  - **the collapse stays score-independent and in SQL** on both sources of the meaning
+    search, so `total` counts the programmes the collapse left, exactly as on the
+    words-only path; only the page is cut in JavaScript, because the blend is not an SQL
+    value;
+  - **the labels are embedded in one call** and cached in `query_vectors`, so a restart
+    of the server asks the service for nothing;
+  - the threshold of the kind is a constant of `meaning.ts`
+    (`MEANING_KIND_MAX_DISTANCE`); it was set from the measurement below, together with
+    the set of the labels (see the measurement and the decision);
+- Tests (the fake embedder, the way C4 tests): the unit tests of the cosine, of the
+  labels, of the source order (`meaning` against the weaker sources), of the pass and its
+  catch-up (`tests/tv-guide/meaning.test.ts`); the worker (the queue emptied, the kinds
+  applied, the run once at a time, the key missing, the embeddings off, the failure kept,
+  the model change, the re-apply after an import,
+  `tests/tv-guide/embedder.test.ts`); the tools (the modes, the meaning alone when no
+  word matches, another order falls back, the key missing, the cursor across the pages,
+  the text of the answer, `get_status` before and after —
+  `tests/tv-guide/meaning-tools.test.ts`); the blend arithmetic in `shared`
+  (`tests/shared/blend.test.ts`, moved from the cinema).
+- **Measured on the real files** (`tmp/playlist.m3u` + `tmp/4a27b28d`, the June 2026
+  snapshot; `now` 2026-06-19 12:00 UTC, the middle of the window; `pastDays` 12;
+  316,746 programmes, 100,611 texts, 100,479 of them in the queue with
+  `minTextChars` 0; `npm run measure-tv-meaning`):
+
+  | Fact | Value |
+  | --- | --- |
+  | Embedding, one run | **4,434 s (74 min)**, about 22.7 texts per second |
+  | `vectors.sqlite` | **451 MB** (100,479 vectors of 1024 dimensions) |
+  | The call that embeds the query | 0.9–4.0 s (one per query, cached) |
+
+  The searches through the tool (the meaning mixed with the words;
+  *cold* = the first call, with the embedding of the query; *warm* = from
+  the cache — the honest number for the target of
+  [iptv-mcp-servers.md](iptv-mcp-servers.md) §7.4):
+
+  | Search | total | cold | warm |
+  | --- | --- | --- | --- |
+  | `query=биатлон… keywords=[Эстерсунд,Швеция] kinds=[sport]` | 1,534 | 2.0 s | **88–105 ms** |
+  | `query=космос… kinds=[film] period=next_7d` | 1,826 | 0.9 s | **98–100 ms** |
+  | `query=французские фильмы production_countries=[FR]` | 202 | 1.9 s | 502–799 ms |
+  | `query=новости спорта…` (no filters) | 41,865 | 3.6 s | 1.6–1.9 s |
+  | a query that matches no word (the meaning alone, the whole guide) | 41,673 | 4.0 s | 1.4–2.1 s |
+
+  The raw scans of `vec_distance_cosine` bracket the cost: the plain
+  distance over every programme with a vector (316,746 rows) takes
+  **1.8 s**; with the collapse 79,770 rows in **2.2 s**; inside a 24-hour
+  window 18,809 rows in **438 ms**.
+
+  **Reading of the numbers.** The realistic searches are far under the
+  target of §7.4 (88–105 ms). The two shapes above it are known and
+  recorded: the country-filtered search (the vector side of the candidate
+  SQL pays for the country `EXISTS` on every text) and the search without
+  any filter, whose vector side is the whole guide — the shape §7.1 calls
+  legal and T3 already measured at ~0.9 s on the words alone. The
+  **fallback to a `vec0` table is not taken**: it would change the
+  semantics of `total` (a KNN top-k instead of the count of the filtered
+  candidates) for the sake of the rare shapes, and the realistic searches
+  do not need it. The tool answers in 1.4–2.1 s in the worst case — far
+  inside the timeout of the client.
+
+  **The kind by meaning does not separate on this model.** The measurement
+  against the 11,442 marker texts (the ground truth of the provider): the
+  distance to the label of the own kind sits at 0.51 in the median, the
+  best wrong label at 0.52 — no threshold separates them. Three sets of
+  labels were tried against the same text vectors: the long phrases of the
+  draft («художественный фильм», …) rank the own kind nearest for 54 % of
+  the marker texts — the chance level; short words («фильм», «сериал»,
+  «спорт, матч», …) reach **75 %**; English labels 73 %; long descriptive
+  phrases 61 %. The short set is in `meaning.ts` now. With it, the pass at
+  the threshold 0.35 assigns the right kind to about 91 % of the texts it
+  touches and covers about 1 % of them:
+
+  | threshold | right | wrong kind | no kind |
+  | --- | --- | --- | --- |
+  | 0.30 | 0.2 % | 0.0 % | 99.8 % |
+  | **0.35 (taken)** | **1.0 %** | **0.1 %** | **98.9 %** |
+  | 0.40 | 4.3 % | 0.4 % | 95.3 % |
+  | 0.45 | 10.3 % | 1.6 % | 88.1 % |
+
+  **The decision:** the pass stays, as a small, safe addition on the top
+  of the other sources — it kinds only the texts where the model is sure,
+  and the sources of the provider (the marker, the pattern) are never
+  touched. A classifier of the whole guide by meaning (another model,
+  another text shape, a two-stage pass) does not exist on this data and
+  stays out of T4; §12 keeps an open item.
+- One bug the measurement run caught, in the candidate SQL of the split:
+  a search without any filter left a dangling `WHERE` in the SQL — a
+  syntax error on the shape the raw scan runs. Fixed (`candidates.ts`
+  builds the clause only when there are conditions); the regression test
+  runs the no-filter search through the tool.
 
 **T5 — Pilot connection and manual checks** (§11, TV Guide alone).
 
@@ -1145,3 +1278,8 @@ Descriptions and the instructions; record what changed.
    stream. The search filter arrives with T3.
 8. Whether news texts are worth embedding: they change daily and are seldom searched by
    meaning.
+9. **A kind classifier by meaning** (measured in T4): the nearest-label pass on the
+   bge-m3 vectors of the guide does not separate the kinds (own 0.51, wrong 0.52 at the
+   median), so the pass stays a small, safe addition at the threshold 0.35. A real
+   classifier needs another model, another text shape or a two-stage pass — out of T4
+   (§10).

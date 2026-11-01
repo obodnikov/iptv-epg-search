@@ -13,11 +13,15 @@
  *
  * The key of a query is the hash of its text **and** of the model: the
  * vectors of two models are never compared.
+ *
+ * The module was in the cinema server until phase T4; the guide asks for
+ * the vectors of its queries too, and the move is part of the phase
+ * (iptv-mcp-servers.md §4.3).
  */
 
-import { type Db } from '../shared/db.ts';
-import { sha256 } from '../shared/hash.ts';
-import { getQueryVector, putQueryVector } from '../shared/vectors.ts';
+import { type Db } from './db.ts';
+import { sha256 } from './hash.ts';
+import { getQueryVector, putQueryVector } from './vectors.ts';
 
 /** How many vectors the memory of the process keeps. */
 const MEMORY_LIMIT = 64;

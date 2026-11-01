@@ -31,7 +31,14 @@ export interface CandidateRow {
   family_key: string;
   quality: number;
   channel_name: string;
+  /** The bm25 score of the words side; null when it matched no word. */
   score: number | null;
+  /**
+   * The distance of the vectors side; null on the words side. The
+   * candidate SQL of the meaning search pairs the two columns, so that
+   * one union carries both scores.
+   */
+  distance: number | null;
 }
 
 /** A programme with its text and its channel, as `get_program` needs it. */

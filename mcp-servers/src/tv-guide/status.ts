@@ -12,6 +12,7 @@ import { type Db } from '../shared/db.ts';
 import { maskUrl } from '../shared/links.ts';
 import { formatInTimezone } from '../shared/time.ts';
 import type { RefreshProgress } from '../shared/refresh.ts';
+import type { EmbedderStatus } from './embedder.ts';
 import {
   guideCounts,
   guideWindow,
@@ -87,7 +88,17 @@ export interface StatusReport {
     model: string;
     meaning: boolean;
   };
-  search_mode: 'words';
+  search_mode: 'words' | 'words+meaning';
+  embedding: {
+    running: boolean;
+    phase: string;
+    done: number;
+    pending: number;
+    error: string | null;
+    enabled: boolean;
+    available: boolean;
+    key_present: boolean;
+  };
   refresh_running: {
     running: boolean;
     phase: string;
@@ -100,10 +111,12 @@ export interface StatusReport {
 /**
  * The state of the vectors.
  *
- * Phase T3 embeds nothing: the queue is filled by the import and the
- * report says how much is waiting for T4.
+ * The count comes from the vectors database, not from the last run: a
+ * server that was started again still has the vectors of the run before,
+ * and the worker's `done` is the progress of this process only (the bug
+ * the smoke test of the cinema found, C4).
  */
-function vectorStatus(db: Db, model: string, vectorsDone: number): {
+function vectorStatus(db: Db, model: string, meaningAvailable: boolean): {
   done: number;
   pending: number;
   model: string;
@@ -111,30 +124,29 @@ function vectorStatus(db: Db, model: string, vectorsDone: number): {
 } {
   const counts = guideCounts(db, model);
   return {
-    done: vectorsDone,
+    done: vectorsInDb(db, model),
     pending: counts.queue,
     model,
-    meaning: false,
+    meaning: meaningAvailable,
   };
 }
 
 /**
- * The number of the vectors of the active model, when the vectors file is
- * attached.
+ * The number of the vectors of the model in the database, when the
+ * vectors file is attached and holds the table.
  */
-export function countVectors(db: Db, model: string): number {
+function vectorsInDb(db: Db, model: string): number {
   if (!db.hasVectors) return 0;
-  try {
-    return (
-      db.get<{ found: number }>(
-        'SELECT count(*) AS found FROM vec.vectors WHERE model = ?',
-        model,
-      )?.found ?? 0
-    );
-  } catch {
-    // The table is not there yet: the first import of a fresh server.
-    return 0;
-  }
+  const table = db.get<{ found: number }>(
+    "SELECT count(*) AS found FROM vec.sqlite_master WHERE type = 'table' AND name = 'vectors'",
+  );
+  if ((table?.found ?? 0) === 0) return 0;
+  return (
+    db.get<{ found: number }>(
+      'SELECT count(*) AS found FROM vec.vectors WHERE model = ?',
+      model,
+    )?.found ?? 0
+  );
 }
 
 /**
@@ -188,10 +200,19 @@ export function statusReport(
     model: string;
     progress: RefreshProgress;
     lastError: string | null;
+    /** The state of the embedding worker. */
+    embedding: EmbedderStatus;
   },
 ): StatusReport {
   const counts = guideCounts(db, params.model);
   const window = guideWindow(db);
+
+  // The search by meaning is there when the embeddings are on, the client
+  // can embed and there is at least one vector in the database — counted
+  // from the database, not from the progress of this process.
+  const vectorsDone = vectorsInDb(db, params.model);
+  const meaningAvailable =
+    params.embedding.enabled && params.embedding.available && vectorsDone > 0;
 
   // The queue of the vectors is reported under `vectors`; the counts keep
   // to the fields the output schema names.
@@ -215,8 +236,18 @@ export function statusReport(
       to: window.to === null ? null : formatInTimezone(window.to, params.timezone),
     },
     last_refresh: lastRefresh(db, params.timezone),
-    vectors: vectorStatus(db, params.model, countVectors(db, params.model)),
-    search_mode: 'words',
+    vectors: vectorStatus(db, params.model, meaningAvailable),
+    search_mode: meaningAvailable ? 'words+meaning' : 'words',
+    embedding: {
+      running: params.embedding.running,
+      phase: params.embedding.phase,
+      done: params.embedding.done,
+      pending: params.embedding.pending,
+      error: params.embedding.last_error,
+      enabled: params.embedding.enabled,
+      available: params.embedding.available,
+      key_present: params.embedding.key_present,
+    },
     refresh_running: params.progress.running
       ? {
           running: params.progress.running,

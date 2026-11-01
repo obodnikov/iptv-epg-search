@@ -1,10 +1,12 @@
 /**
  * handler-search.ts - the `search_programs` tool.
  *
- * The search of phase T3 runs on the words alone: the filters are applied
- * in SQL, the words are matched in the keyword index, the repeats are
- * collapsed, the result is sorted and cut. The meaning of the query comes
- * with phase T4.
+ * The search mixes the words and the meaning of the query (design:
+ * iptv-mcp-servers.md §7.1). The vector of the query is asked of the
+ * service once and kept, so that a repeated search or the next page of a
+ * search costs nothing. Without a vector — no key, the service down, the
+ * vectors still being built — the search runs on the words alone and says
+ * so (`search_mode`).
  */
 
 import type { CallToolResult } from '@modelcontextprotocol/server';
@@ -18,11 +20,13 @@ import { formatInTimezone } from '../shared/time.ts';
 import { exactWindow, isoToEpoch, isPeriod, PERIODS, periodWindow, upcomingWindow } from './periods.ts';
 import { regionValues, resolveChannels } from './channels-read.ts';
 import { decodeSearchCursor, encodeSearchCursor, searchPrograms, searchSignature } from './search.ts';
+import { vectorsReady } from './search-meaning.ts';
 import { renderList } from './render.ts';
 import {
   checkKinds,
   checkThemes,
   cleanValues,
+  embedQuery,
   guideEmptyResult,
   MAX_LIMIT,
   notConfigured,
@@ -93,6 +97,23 @@ export async function searchProgramsTool(
   // The relevance order is the default when the request carries words.
   const sort = args.sort ?? (query.length > 0 || keywords.length > 0 ? 'relevance' : 'time');
 
+
+  // The meaning of the query is resolved **before** the signature: the
+  // cursor signs what the search really ran on. A page of a search whose
+  // first page ran on the words alone (the vectors were still building)
+  // must not quietly switch to words+meaning — the cursor of the first
+  // page would not fit, and the model runs the search again.
+  let meaning: Float32Array | null = null;
+  if (
+    sort === 'relevance' &&
+    query.length > 0 &&
+    settings.embeddings.enabled &&
+    ctx.client.available &&
+    vectorsReady(ctx.db, settings.embeddings.model)
+  ) {
+    meaning = await embedQuery(ctx, query, settings.embeddings.model);
+  }
+
   const signature = searchSignature({
     query,
     keywords,
@@ -113,7 +134,7 @@ export async function searchProgramsTool(
     sort,
     timezone,
     tonightFromHour,
-  });
+  }, meaning === null ? '' : settings.embeddings.model);
 
   // The cursor belongs to one search: it may not be used for another one.
   // The moment of the search rides in the cursor: a page is read minutes
@@ -169,6 +190,12 @@ export async function searchProgramsTool(
     MAX_LIMIT,
   );
 
+  // The meaning of the query: it is only used when the result is ordered
+  // by relevance, only a query with words has a meaning to compare, and
+  // only when the embeddings are on — the service is not asked when the
+  // setting switches the meaning off. A service that does not answer
+  // leaves the meaning out; the search falls back to the words and says
+  // so.
   const outcome = searchPrograms(
     ctx.db,
     {
@@ -199,6 +226,11 @@ export async function searchProgramsTool(
       timezone,
       snippetChars: settings.search.snippetChars,
       includeAdult: settings.includeAdult,
+      meaning:
+        meaning && settings.embeddings.model
+          ? { vector: meaning, model: settings.embeddings.model }
+          : null,
+      meaningWeight: settings.search.meaningWeight,
     },
     limit,
     offset,
@@ -226,3 +258,4 @@ export async function searchProgramsTool(
     renderList(outcome.items, outcome.total, outcome.mode, outcome.usedWords),
   );
 }
+

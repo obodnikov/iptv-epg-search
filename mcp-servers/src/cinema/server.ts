@@ -28,7 +28,7 @@ import { SettingsStore } from '../shared/settings.ts';
 import { ensureVectorSchema } from '../shared/vectors.ts';
 import { CINEMA_SETTINGS_SPEC, readCinemaSettings } from './config.ts';
 import { createEmbedder, type Embedder } from './embedder.ts';
-import { QueryCache } from './query-cache.ts';
+import { QueryCache } from '../shared/query-cache.ts';
 import { createCinemaRefresh, shouldRefreshAtStart, type RefreshStart } from './refresh.ts';
 import { applyCinemaSchema } from './schema.ts';
 import { registerCinemaTools } from './tools.ts';
